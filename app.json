@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "walkUCF",
+    "slug": "walkucf",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "walkucf",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.walkucf.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "walkUCF uses your location to show where you are on campus and to route from your current location."
+      }
+    },
+    "android": {
+      "package": "com.walkucf.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#000000"
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "walkUCF uses your location to show where you are on campus and to route from your current location."
+        }
+      ]
+    ]
+  }
+}
