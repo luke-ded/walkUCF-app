@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -37,26 +38,27 @@ interface ChildProps {
 
 const displayAllPaths = false; // Change to true to view all paths
 
-// The native iOS base map (Apple Maps). Selecting this renders no UrlTile
-// overlay, so the underlying PROVIDER_DEFAULT map shows through.
-const APPLE_MAPS = "Apple Maps";
+// The platform's native base map (Apple Maps on iOS, Google Maps on Android).
+// When selected the UrlTile is kept mounted but hidden (opacity 0) so the
+// underlying PROVIDER_DEFAULT map shows through.
+const NATIVE_MAP = "Native";
 
 // Resolve the initially selected tile. Older builds defaulted to (and
 // persisted) "OSM Default"; a one-time migration moves those installs onto the
-// new Apple Maps default so it actually takes effect. User choices made after
+// new native-map default so it actually takes effect. User choices made after
 // the migration are preserved.
-const TILE_DEFAULT_VERSION = "appleMaps-v1";
+const TILE_DEFAULT_VERSION = "nativeDefault-v1";
 function resolveInitialTile(): string {
   if (localStorage.getItem("tileDefaultVersion") !== TILE_DEFAULT_VERSION) {
     localStorage.setItem("tileDefaultVersion", TILE_DEFAULT_VERSION);
-    localStorage.setItem("tile", APPLE_MAPS);
-    return APPLE_MAPS;
+    localStorage.setItem("tile", NATIVE_MAP);
+    return NATIVE_MAP;
   }
-  return localStorage.getItem("tile") ?? APPLE_MAPS;
+  return localStorage.getItem("tile") ?? NATIVE_MAP;
 }
 
 const tileSelectionOptions = new Map<string, string>([
-  [APPLE_MAPS, ""],
+  [NATIVE_MAP, ""],
   ["OSM Default", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
   [
     "ERSI Satellite",
@@ -68,6 +70,10 @@ const tileSelectionOptions = new Map<string, string>([
     "https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}.png",
   ],
 ]);
+
+// A valid template to keep the (hidden) UrlTile mounted while the native base
+// map is selected; it never becomes visible because opacity is 0.
+const NATIVE_PLACEHOLDER_URL = tileSelectionOptions.get("OSM Default")!;
 
 // Campus center & bounds (mirrors the web Leaflet configuration).
 const CENTER: Region = {
@@ -315,15 +321,32 @@ const MapBox: React.FC<ChildProps> = ({
           maxZoomLevel={18}
           rotateEnabled={false}
           pitchEnabled={false}
+          // On Android the custom tiles can't replace the base map, so hide it
+          // (mapType "none") to stop the native map's labels showing through.
+          // On iOS the base map stays and UrlTile's shouldReplaceMapContent
+          // handles this instead.
+          mapType={
+            Platform.OS === "android" && tileSelection !== NATIVE_MAP
+              ? "none"
+              : "standard"
+          }
           onMapReady={() => setLoading(false)}
         >
-          {tileSelection !== APPLE_MAPS && (
-            <UrlTile
-              urlTemplate={tileSelectionOptions.get(tileSelection)!}
-              maximumZ={19}
-              flipY={false}
-            />
-          )}
+          {/* Kept permanently mounted (even for the native base map, where
+              it's hidden via opacity) so switching options is always a prop
+              update, never a fresh mount. A fresh UrlTile mount fails to apply
+              canReplaceMapContent on iOS, leaving the native labels visible. */}
+          <UrlTile
+            urlTemplate={
+              tileSelection === NATIVE_MAP
+                ? NATIVE_PLACEHOLDER_URL
+                : tileSelectionOptions.get(tileSelection)!
+            }
+            maximumZ={19}
+            flipY={false}
+            shouldReplaceMapContent={tileSelection !== NATIVE_MAP}
+            opacity={tileSelection === NATIVE_MAP ? 0 : 1}
+          />
 
           {/* Computed route legs */}
           {paths.map((path, index) => (
@@ -471,7 +494,7 @@ const MapBox: React.FC<ChildProps> = ({
                 onPress={() => {
                   handleTileSelection(key);
                   setTileModal(false);
-                  if (key !== APPLE_MAPS) setLoading(true);
+                  if (key !== NATIVE_MAP) setLoading(true);
                 }}
               >
                 <Text style={{ color: palette.textLight, fontWeight: "600" }}>
