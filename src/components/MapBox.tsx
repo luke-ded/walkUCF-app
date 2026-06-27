@@ -119,7 +119,7 @@ const CENTER: Region = {
 // two numbers to taste — they are approximate equivalents of the old 18/15.
 const ZOOM_RANGE = {
   minCenterCoordinateDistance: 500,
-  maxCenterCoordinateDistance: 3000,
+  maxCenterCoordinateDistance: 4000,
   animated: false,
 };
 
@@ -141,6 +141,50 @@ const CAMPUS_HOLE: LatLng[] = [
 // re-tessellate this large masking polygon on each location update — a major
 // source of stutter while panning/zooming.
 const CAMPUS_HOLES: LatLng[][] = [CAMPUS_HOLE];
+
+// Axis-aligned bounds of the un-dimmed campus hole. The map's viewport is kept
+// inside these so the user can't pan off-campus into the dimmed region.
+const CAMPUS_BOUNDS = {
+  minLat: CAMPUS_HOLE[0].latitude,
+  maxLat: CAMPUS_HOLE[1].latitude,
+  minLng: CAMPUS_HOLE[0].longitude,
+  maxLng: CAMPUS_HOLE[2].longitude,
+};
+
+// Clamp a region's center so the *viewport edges* stay within CAMPUS_BOUNDS
+// (not just the center) — so off-campus area is never even visible. When a
+// span is larger than the bounds (zoomed so far out the hole can't fill the
+// screen) that axis is centered instead, since containment is impossible.
+// Returns null when the region is already inside, so no correction is needed.
+function clampToCampus(region: Region): Region | null {
+  const { latitude, longitude, latitudeDelta, longitudeDelta } = region;
+  const spanLat = CAMPUS_BOUNDS.maxLat - CAMPUS_BOUNDS.minLat;
+  const spanLng = CAMPUS_BOUNDS.maxLng - CAMPUS_BOUNDS.minLng;
+
+  const lat =
+    latitudeDelta >= spanLat
+      ? (CAMPUS_BOUNDS.minLat + CAMPUS_BOUNDS.maxLat) / 2
+      : Math.min(
+          Math.max(latitude, CAMPUS_BOUNDS.minLat + latitudeDelta / 2),
+          CAMPUS_BOUNDS.maxLat - latitudeDelta / 2,
+        );
+
+  const lng =
+    longitudeDelta >= spanLng
+      ? (CAMPUS_BOUNDS.minLng + CAMPUS_BOUNDS.maxLng) / 2
+      : Math.min(
+          Math.max(longitude, CAMPUS_BOUNDS.minLng + longitudeDelta / 2),
+          CAMPUS_BOUNDS.maxLng - longitudeDelta / 2,
+        );
+
+  // Ignore sub-~2m differences so the programmatic correction can't loop (a
+  // re-applied animateToRegion reports a near-identical region back).
+  const EPS = 2e-5;
+  if (Math.abs(lat - latitude) < EPS && Math.abs(lng - longitude) < EPS) {
+    return null;
+  }
+  return { latitude: lat, longitude: lng, latitudeDelta, longitudeDelta };
+}
 
 // The device-location dot lives in its own component, with its own location
 // subscription and state, so a position update re-renders only this marker —
@@ -308,6 +352,21 @@ const MapBox: React.FC<ChildProps> = ({
     setReplaceApplied(true);
   }, []);
 
+  // Custom tile layers expose no "finished loading" event, so the spinner is
+  // shown briefly whenever a non-native layer is selected and then cleared on a
+  // timer. (The native base map is instant and never shows it.) Previously the
+  // spinner was only cleared by the one-shot onMapReady, so it stayed up
+  // forever after the first tile switch.
+  useEffect(() => {
+    if (tileSelection === NATIVE_MAP) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const id = setTimeout(() => setLoading(false), 1500);
+    return () => clearTimeout(id);
+  }, [tileSelection]);
+
   // Recompute the route whenever stops or map options change.
   useEffect(() => {
     handleDeselect();
@@ -409,6 +468,16 @@ const MapBox: React.FC<ChildProps> = ({
     setSelectedPoint(null);
   }
 
+  // After a pan/zoom settles, snap back inside the campus bounds if the
+  // gesture pushed the viewport past them. The corrected region is in-bounds,
+  // so its own settle event clamps to null and the correction doesn't loop.
+  function handleRegionChangeComplete(region: Region) {
+    const clamped = clampToCampus(region);
+    if (clamped && mapRef.current) {
+      mapRef.current.animateToRegion(clamped, 180);
+    }
+  }
+
   function handleTileSelection(key: string) {
     localStorage.setItem("tile", key);
     setTileSelection(key);
@@ -503,6 +572,7 @@ const MapBox: React.FC<ChildProps> = ({
           : { minZoomLevel: 15, maxZoomLevel: 18 })}
         rotateEnabled={false}
         pitchEnabled={false}
+        onRegionChangeComplete={handleRegionChangeComplete}
         // On Android the custom tiles can't replace the base map, so hide it
         // (mapType "none") to stop the native map's labels showing through.
         // On iOS the base map stays and UrlTile's shouldReplaceMapContent
@@ -646,7 +716,6 @@ const MapBox: React.FC<ChildProps> = ({
                   onPress={() => {
                     handleTileSelection(key);
                     setTileModal(false);
-                    if (key !== NATIVE_MAP) setLoading(true);
                   }}
                   activeOpacity={0.6}
                 >
