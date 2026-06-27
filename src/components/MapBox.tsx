@@ -83,6 +83,19 @@ const CENTER: Region = {
   longitudeDelta: 0.018,
 };
 
+// iOS zoom bounds, expressed as MapKit camera-to-center distances in meters
+// (the native MKMapView.cameraZoomRange). `minCenterCoordinateDistance` is the
+// closest the camera may get (most zoomed in, ~building level);
+// `maxCenterCoordinateDistance` is the farthest (most zoomed out, ~whole
+// campus). These replace the legacy minZoomLevel/maxZoomLevel props on iOS,
+// which froze the map at the limits (see the MapView usage below). Tune these
+// two numbers to taste — they are approximate equivalents of the old 18/15.
+const ZOOM_RANGE = {
+  minCenterCoordinateDistance: 500,
+  maxCenterCoordinateDistance: 3000,
+  animated: false,
+};
+
 // Outer ring (large) with a campus-sized hole, to dim everything off-campus.
 const OUTER_RING: LatLng[] = [
   { latitude: 28.64840202840334, longitude: -81.26488475758394 },
@@ -116,6 +129,69 @@ function loadMapOptions(): boolean[] {
   return [true, false, false, false];
 }
 
+// The device-location dot lives in its own component, with its own location
+// subscription and state, so a position update re-renders only this marker —
+// not the whole map. Previously `currentLocation` lived in MapBox, so every
+// GPS fix (which can fire several times a second with distanceInterval:1 and
+// GPS jitter) re-rendered the entire MapView subtree; those re-renders
+// reconciling mid-gesture were the cause of the periodic pan/zoom freezes.
+const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
+  const [coord, setCoord] = useState<LatLng | null>(null);
+  const [tracks, setTracks] = useState(true);
+
+  useEffect(() => {
+    if (!enabled) {
+      setCoord(null);
+      return;
+    }
+
+    let cancelled = false;
+    let stop: (() => void) | undefined;
+
+    watchPosition((pos) => {
+      setCoord({ latitude: pos.lat, longitude: pos.lon });
+      localStorage.setItem(
+        "currentLocation",
+        JSON.stringify([pos.lat, pos.lon]),
+      );
+    }).then((unsubscribe) => {
+      if (cancelled) unsubscribe();
+      else stop = unsubscribe;
+    });
+
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [enabled]);
+
+  // Track view changes only briefly when the dot first appears so its bitmap is
+  // captured, then disable tracking; otherwise react-native-maps re-rasterizes
+  // the (shadowed, multi-view) marker every frame during pan/zoom. Position
+  // updates afterwards move the marker via its coordinate prop without tracking.
+  const visible = enabled && coord != null;
+  useEffect(() => {
+    if (!visible) return;
+    setTracks(true);
+    const id = setTimeout(() => setTracks(false), 1500);
+    return () => clearTimeout(id);
+  }, [visible]);
+
+  if (!visible || !coord) return null;
+
+  return (
+    <Marker
+      coordinate={coord}
+      anchor={{ x: 0.5, y: 0.5 }}
+      tracksViewChanges={tracks}
+    >
+      <View style={styles.currentOuter}>
+        <View style={styles.currentInner} />
+      </View>
+    </Marker>
+  );
+};
+
 const MapBox: React.FC<ChildProps> = ({
   stops,
   triggerRerender,
@@ -133,11 +209,9 @@ const MapBox: React.FC<ChildProps> = ({
   const [parking, setParking] = useState(initVals[3]);
   const [selectedPoint, setSelectedPoint] = useState<LatLng | null>(null);
   const [paths, setPaths] = useState<number[][]>([]);
-  const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
   const [loading, setLoading] = useState(false);
   const [tileModal, setTileModal] = useState(false);
   const [tileSelection, setTileSelection] = useState<string>(resolveInitialTile);
-  const [trackCurrent, setTrackCurrent] = useState(true);
 
   // react-native-maps applies a UrlTile's `shouldReplaceMapContent`
   // (MKTileOverlay.canReplaceMapContent on iOS) only when it arrives as a prop
@@ -159,36 +233,8 @@ const MapBox: React.FC<ChildProps> = ({
   const graphData: GraphData = JSON.parse(localStorage.getItem("graphData")!);
   const settings: Settings = JSON.parse(localStorage.getItem("settings")!);
 
-  // Track the device location with a single long-lived watch subscription.
-  // Re-runs only when the showLocation setting changes (settings updates flow
-  // through triggerRerender, re-rendering this component). Polling here with a
-  // timer previously froze the map and spammed main-thread authorization
-  // warnings; see watchPosition in location.ts.
-  useEffect(() => {
-    if (!settings.showLocation) {
-      setCurrentLocation(null);
-      return;
-    }
-
-    let cancelled = false;
-    let stop: (() => void) | undefined;
-
-    watchPosition((pos) => {
-      setCurrentLocation({ latitude: pos.lat, longitude: pos.lon });
-      localStorage.setItem(
-        "currentLocation",
-        JSON.stringify([pos.lat, pos.lon]),
-      );
-    }).then((unsubscribe) => {
-      if (cancelled) unsubscribe();
-      else stop = unsubscribe;
-    });
-
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, [settings.showLocation]);
+  // The device-location watch + dot now live in <CurrentLocationMarker> so its
+  // frequent position updates don't re-render this whole component.
 
   // Deliver shouldReplaceMapContent as a post-mount prop update (see the
   // replaceApplied note above). Runs once after the first commit; thereafter the
@@ -196,21 +242,6 @@ const MapBox: React.FC<ChildProps> = ({
   useEffect(() => {
     setReplaceApplied(true);
   }, []);
-
-  // Keep react-native-maps from re-rasterizing the current-location marker's
-  // custom view on every frame. `tracksViewChanges` defaults to true, which
-  // forces a bitmap snapshot of the marker each frame of any pan/zoom gesture —
-  // the dot has a shadow and nested views, so this was the dominant cause of
-  // the zoom freezes. We allow a brief tracking window when the dot (re)appears
-  // so its snapshot is captured once, then disable tracking. Position updates
-  // still move the marker via its coordinate prop without view tracking.
-  const showLocationDot = settings.showLocation && currentLocation != null;
-  useEffect(() => {
-    if (!showLocationDot) return;
-    setTrackCurrent(true);
-    const id = setTimeout(() => setTrackCurrent(false), 1500);
-    return () => clearTimeout(id);
-  }, [showLocationDot]);
 
   // Recompute the route whenever stops or map options change.
   useEffect(() => {
@@ -432,8 +463,16 @@ const MapBox: React.FC<ChildProps> = ({
           provider={PROVIDER_DEFAULT}
           style={styles.map}
           initialRegion={CENTER}
-          minZoomLevel={15}
-          maxZoomLevel={18}
+          // Zoom bounds. On iOS the legacy minZoomLevel/maxZoomLevel props
+          // (deprecated for Apple Maps) enforce limits by re-setting the camera
+          // with animated:TRUE from JS on every region change once you pinch
+          // past a limit; that reset fights the live gesture and freezes the map
+          // — worst on older devices (react-native-maps #4961). MapKit's native
+          // cameraZoomRange clamps with no JS feedback loop. Android keeps the
+          // legacy props (backed by a non-freezing native implementation).
+          {...(Platform.OS === "ios"
+            ? { cameraZoomRange: ZOOM_RANGE }
+            : { minZoomLevel: 15, maxZoomLevel: 18 })}
           rotateEnabled={false}
           pitchEnabled={false}
           // On Android the custom tiles can't replace the base map, so hide it
@@ -490,18 +529,9 @@ const MapBox: React.FC<ChildProps> = ({
             />
           )}
 
-          {/* Current location */}
-          {currentLocation && settings.showLocation && (
-            <Marker
-              coordinate={currentLocation}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={trackCurrent}
-            >
-              <View style={styles.currentOuter}>
-                <View style={styles.currentInner} />
-              </View>
-            </Marker>
-          )}
+          {/* Current location (self-contained: owns its location watch so
+              position updates don't re-render the rest of the map) */}
+          <CurrentLocationMarker enabled={settings.showLocation} />
 
           {/* Off-campus dimming mask */}
           {campusMask}
