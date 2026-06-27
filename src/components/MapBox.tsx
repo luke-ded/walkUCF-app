@@ -71,9 +71,17 @@ const tileSelectionOptions = new Map<string, string>([
   ],
 ]);
 
-// A valid template to keep the (hidden) UrlTile mounted while the native base
-// map is selected; it never becomes visible because opacity is 0.
-const NATIVE_PLACEHOLDER_URL = tileSelectionOptions.get("OSM Default")!;
+// Placeholder template that keeps the (hidden) UrlTile mounted while the native
+// base map is selected; it never becomes visible (opacity 0) or fetched
+// (offlineMode + a minimumZ above the max zoom). It MUST differ from every real
+// tile URL above: on iOS react-native-maps only rebuilds the MKTileOverlay —
+// and therefore only loads tiles — when `urlTemplate` actually changes. If the
+// placeholder equalled a real URL (it used to be "OSM Default"), switching from
+// the native map to that layer left `urlTemplate` unchanged, so no overlay was
+// rebuilt and the tiles didn't appear until the next pan/zoom. The reserved
+// `.invalid` TLD guarantees this never collides with a real source (and it is
+// never actually requested anyway).
+const NATIVE_PLACEHOLDER_URL = "https://tile.invalid/{z}/{x}/{y}.png";
 
 // Campus center & bounds (mirrors the web Leaflet configuration).
 const CENTER: Region = {
