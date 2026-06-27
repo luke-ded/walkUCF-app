@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  ImageSourcePropType,
   Modal,
   Platform,
   Pressable,
@@ -204,6 +205,55 @@ const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
   );
 };
 
+// Marker icon display size. The source PNGs are 50x82; the original web app
+// drew them at height 41 / width auto (= 25x41) and anchored them at the
+// bottom-center tip (Leaflet iconAnchor [12, 41]).
+const MARKER_WIDTH = 25;
+const MARKER_HEIGHT = 41;
+
+// The web app kept the gold "selected entrance" pin stacked above every
+// standard stop pin (Leaflet zIndexOffset). Mirror that here so a selected
+// entrance that coincides with a stop is never hidden behind it.
+const STOP_Z_INDEX = 1;
+const SELECTED_Z_INDEX = 1000;
+
+// A pin rendered from a sized child <Image> rather than the Marker `image`
+// prop. react-native-maps cannot resize the `image` prop, so on iOS a 50x82
+// asset draws at ~50x82pt (roughly double the intended size); a child image
+// lets us pin the exact 25x41 the web app used. View changes are tracked only
+// until the icon bitmap is captured (onLoad, with an 800ms fallback), then
+// disabled so the marker isn't re-rasterized every frame while panning/zooming.
+const PinMarker: React.FC<{
+  coordinate: LatLng;
+  source: ImageSourcePropType;
+  zIndex: number;
+  children?: React.ReactNode;
+}> = ({ coordinate, source, zIndex, children }) => {
+  const [tracks, setTracks] = useState(true);
+
+  useEffect(() => {
+    const id = setTimeout(() => setTracks(false), 800);
+    return () => clearTimeout(id);
+  }, []);
+
+  return (
+    <Marker
+      coordinate={coordinate}
+      anchor={{ x: 0.5, y: 1 }}
+      zIndex={zIndex}
+      tracksViewChanges={tracks}
+    >
+      <Image
+        source={source}
+        style={styles.markerIcon}
+        resizeMode="contain"
+        onLoad={() => setTracks(false)}
+      />
+      {children}
+    </Marker>
+  );
+};
+
 const MapBox: React.FC<ChildProps> = ({
   stops,
   triggerRerender,
@@ -397,17 +447,16 @@ const MapBox: React.FC<ChildProps> = ({
               ? "End: " + point.name
               : "Stop " + (index + 1) + ": " + point.name;
         return (
-          <Marker
+          <PinMarker
             key={"stop-" + index}
             coordinate={{ latitude: entrance.lat, longitude: entrance.lon }}
-            image={standardImage}
-            anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
+            source={standardImage}
+            zIndex={STOP_Z_INDEX}
           >
             <Callout>
               <Text>{label}</Text>
             </Callout>
-          </Marker>
+          </PinMarker>
         );
       }),
     [stops],
@@ -492,13 +541,13 @@ const MapBox: React.FC<ChildProps> = ({
         {/* Stop markers */}
         {stopMarkers}
 
-        {/* Selected entrance marker */}
+        {/* Selected entrance marker — kept above the standard stop pins via
+            both JSX order (rendered last) and an elevated zIndex. */}
         {selectedPoint && (
-          <Marker
+          <PinMarker
             coordinate={selectedPoint}
-            image={selectImage}
-            anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
+            source={selectImage}
+            zIndex={SELECTED_Z_INDEX}
           />
         )}
 
@@ -647,6 +696,10 @@ const styles = StyleSheet.create({
     height: 17,
     borderRadius: 8.5,
     backgroundColor: "#1975c8",
+  },
+  markerIcon: {
+    width: MARKER_WIDTH,
+    height: MARKER_HEIGHT,
   },
   controls: {
     position: "absolute",
