@@ -1,5 +1,5 @@
 diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMap.m b/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
-index dbc85fb..2aedf4a 100644
+index dbc85fb..af380e7 100644
 --- a/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
 +++ b/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
 @@ -108,13 +108,17 @@ - (void)insertReactSubview:(id<RCTComponent>)subview atIndex:(NSInteger)atIndex
@@ -23,6 +23,56 @@ index dbc85fb..2aedf4a 100644
      } else if ([subview isKindOfClass:[AIRMapUrlTile class]]) {
          ((AIRMapUrlTile *)subview).map = self;
          [self addOverlay:(id<MKOverlay>)subview];
+@@ -504,6 +508,37 @@ - (void)setCameraZoomRange:(NSDictionary *)cameraZoomRange {
+     [super setCameraZoomRange:zoomRange animated:animated];
+ }
+ 
++// Constrains the camera's center coordinate to a region, so the user cannot
++// pan the map outside of it (MKMapView.cameraBoundary, iOS 13+). Passed a
++// coordinate region dict {latitude, longitude, latitudeDelta, longitudeDelta}.
++// A nil/incomplete dict removes the boundary.
++- (void)setCameraBoundary:(NSDictionary *)cameraBoundary {
++    if (!@available(iOS 13.0, *)) {
++        return;
++    }
++
++    NSNumber *latitude = cameraBoundary[@"latitude"];
++    NSNumber *longitude = cameraBoundary[@"longitude"];
++    NSNumber *latitudeDelta = cameraBoundary[@"latitudeDelta"];
++    NSNumber *longitudeDelta = cameraBoundary[@"longitudeDelta"];
++
++    if (latitude == nil || longitude == nil ||
++        latitudeDelta == nil || longitudeDelta == nil) {
++        [super setCameraBoundary:nil animated:NO];
++        return;
++    }
++
++    MKCoordinateRegion region = MKCoordinateRegionMake(
++        CLLocationCoordinate2DMake([latitude doubleValue], [longitude doubleValue]),
++        MKCoordinateSpanMake([latitudeDelta doubleValue], [longitudeDelta doubleValue]));
++
++    MKMapCameraBoundary *boundary =
++        [[MKMapCameraBoundary alloc] initWithCoordinateRegion:region];
++
++    BOOL animated = [cameraBoundary[@"animated"] boolValue];
++    [super setCameraBoundary:boundary animated:animated];
++}
++
+ // Include properties of MKMapView which are only available on iOS 9+
+ // and check if their selector is available before calling super method.
+ 
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
+index f3f2513..5c049cd 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
+@@ -111,6 +111,7 @@ - (UIView *)view
+ RCT_EXPORT_VIEW_PROPERTY(mapPadding, UIEdgeInsets)
+ RCT_EXPORT_VIEW_PROPERTY(mapType, MKMapType)
+ RCT_EXPORT_VIEW_PROPERTY(cameraZoomRange, NSDictionary)
++RCT_EXPORT_VIEW_PROPERTY(cameraBoundary, NSDictionary)
+ RCT_EXPORT_VIEW_PROPERTY(onMapReady, RCTBubblingEventBlock)
+ RCT_EXPORT_VIEW_PROPERTY(onChange, RCTBubblingEventBlock)
+ RCT_EXPORT_VIEW_PROPERTY(onPanDrag, RCTBubblingEventBlock)
 diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
 index f77f627..89dc1a5 100644
 --- a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m

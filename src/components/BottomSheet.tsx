@@ -37,6 +37,9 @@ interface Props {
   /** Body content (the scrollable list); revealed as the sheet is dragged up. */
   children: React.ReactNode;
   onIndexChange?: (index: number) => void;
+  /** Reports the measured peek (collapsed) height — i.e. how much of whatever
+   * is behind the sheet it covers when minimized. */
+  onPeekHeightChange?: (height: number) => void;
 }
 
 const TOP_GAP = 10; // gap between the status bar and a fully-open sheet
@@ -53,13 +56,17 @@ const PROJECTION = 110; // how far a fling is projected when choosing a detent
  * gesture is heading toward (distance + velocity projection).
  */
 const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
-  { topInset, bottomInset, header, children, onIndexChange },
+  { topInset, bottomInset, header, children, onIndexChange, onPeekHeightChange },
   ref,
 ) {
   const theme = useTheme();
   const [winH, setWinH] = useState(() => Dimensions.get("window").height);
   const [peekH, setPeekH] = useState(0);
   const ready = peekH > 0;
+
+  useEffect(() => {
+    if (peekH > 0) onPeekHeightChange?.(peekH);
+  }, [peekH, onPeekHeightChange]);
 
   const translateY = useRef(new Animated.Value(winH)).current;
   const indexRef = useRef(0);

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   Image,
   ImageSourcePropType,
   Modal,
@@ -43,6 +44,10 @@ interface ChildProps {
   parking: boolean;
   // Safe-area top inset so the floating map controls clear the status bar.
   topInset: number;
+  // Height (px) of the map currently hidden behind the minimized bottom sheet,
+  // so the south drag bound is relaxed enough to reveal the campus bottom above
+  // it.
+  obscuredBottom: number;
 }
 
 const displayAllPaths = false; // Change to true to view all paths
@@ -156,16 +161,20 @@ const CAMPUS_BOUNDS = {
 // span is larger than the bounds (zoomed so far out the hole can't fill the
 // screen) that axis is centered instead, since containment is impossible.
 // Returns null when the region is already inside, so no correction is needed.
-function clampToCampus(region: Region): Region | null {
+function clampToCampus(region: Region, southMarginDeg = 0): Region | null {
   const { latitude, longitude, latitudeDelta, longitudeDelta } = region;
   const spanLat = CAMPUS_BOUNDS.maxLat - CAMPUS_BOUNDS.minLat;
   const spanLng = CAMPUS_BOUNDS.maxLng - CAMPUS_BOUNDS.minLng;
 
+  // Allow the southern edge to drop `southMarginDeg` below campus so the bottom
+  // of campus can be dragged up above the minimized bottom sheet. North stays
+  // pinned to the hole.
+  const effMinLat = CAMPUS_BOUNDS.minLat - southMarginDeg;
   const lat =
-    latitudeDelta >= spanLat
-      ? (CAMPUS_BOUNDS.minLat + CAMPUS_BOUNDS.maxLat) / 2
+    latitudeDelta >= spanLat + southMarginDeg
+      ? (effMinLat + CAMPUS_BOUNDS.maxLat) / 2
       : Math.min(
-          Math.max(latitude, CAMPUS_BOUNDS.minLat + latitudeDelta / 2),
+          Math.max(latitude, effMinLat + latitudeDelta / 2),
           CAMPUS_BOUNDS.maxLat - latitudeDelta / 2,
         );
 
@@ -184,6 +193,34 @@ function clampToCampus(region: Region): Region | null {
     return null;
   }
   return { latitude: lat, longitude: lng, latitudeDelta, longitudeDelta };
+}
+
+// Region that MapKit's native `cameraBoundary` (iOS, via the local patch)
+// constrains the map *center* to. To keep the viewport *edges* inside the
+// campus hole, the allowed-center region is the hole shrunk by half the
+// current viewport on each axis (so center + halfViewport lands exactly on the
+// hole edge). When the viewport is larger than the hole on an axis, that axis
+// collapses to a near-zero span and the center is effectively locked — the
+// "zoomed too far out to avoid it" case. Centered on the hole's midpoint.
+function computeBoundary(
+  viewportLatDelta: number,
+  viewportLngDelta: number,
+  southMarginDeg = 0,
+) {
+  const spanLat = CAMPUS_BOUNDS.maxLat - CAMPUS_BOUNDS.minLat;
+  const spanLng = CAMPUS_BOUNDS.maxLng - CAMPUS_BOUNDS.minLng;
+  const TINY = 1e-4; // ~11m; keeps the region valid while effectively locking
+  return {
+    // The allowed-center range extends `southMarginDeg` further south so the
+    // campus bottom can be dragged above the minimized sheet; this shifts the
+    // (symmetric) region's center south by half that and grows its span by it.
+    // North/east/west stay pinned to the hole.
+    latitude:
+      (CAMPUS_BOUNDS.minLat + CAMPUS_BOUNDS.maxLat) / 2 - southMarginDeg / 2,
+    longitude: (CAMPUS_BOUNDS.minLng + CAMPUS_BOUNDS.maxLng) / 2,
+    latitudeDelta: Math.max(spanLat + southMarginDeg - viewportLatDelta, TINY),
+    longitudeDelta: Math.max(spanLng - viewportLngDelta, TINY),
+  };
 }
 
 // The device-location dot lives in its own component, with its own location
@@ -313,15 +350,54 @@ const MapBox: React.FC<ChildProps> = ({
   grass,
   parking,
   topInset,
+  obscuredBottom,
 }) => {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
+
+  // Most recent viewport zoom, so the south margin can be recomputed when the
+  // obscured-bottom height changes without waiting for the next gesture.
+  const lastDeltas = useRef({
+    lat: CENTER.latitudeDelta,
+    lng: CENTER.longitudeDelta,
+  });
+
+  // Convert the obscured bottom height (px) to a latitude span at a given zoom.
+  // The map fills the screen, so latitudeDelta maps to the full screen height;
+  // a small gap lifts the campus edge a touch clear of the sheet.
+  const BOTTOM_DRAG_GAP = 10;
+  function southMarginDeg(viewportLatDelta: number): number {
+    const screenH = Dimensions.get("window").height;
+    if (screenH <= 0) return 0;
+    return ((obscuredBottom + BOTTOM_DRAG_GAP) / screenH) * viewportLatDelta;
+  }
 
   const [selectedPoint, setSelectedPoint] = useState<LatLng | null>(null);
   const [paths, setPaths] = useState<number[][]>([]);
   const [loading, setLoading] = useState(false);
   const [tileModal, setTileModal] = useState(false);
   const [tileSelection, setTileSelection] = useState<string>(resolveInitialTile);
+
+  // The native camera boundary (iOS) tracks the current zoom so the viewport
+  // edges always stay inside the campus hole (with extra room to the south for
+  // the bottom sheet). Seeded from the initial region; refined as the real
+  // viewport deltas / obscured height come in.
+  const [boundary, setBoundary] = useState(() =>
+    computeBoundary(
+      CENTER.latitudeDelta,
+      CENTER.longitudeDelta,
+      southMarginDeg(CENTER.latitudeDelta),
+    ),
+  );
+
+  // Re-derive the boundary when the obscured-bottom height changes (e.g. the
+  // sheet's peek height is measured after first layout), using the last zoom.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const { lat, lng } = lastDeltas.current;
+    setBoundary(computeBoundary(lat, lng, southMarginDeg(lat)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obscuredBottom]);
 
   // react-native-maps applies a UrlTile's `shouldReplaceMapContent`
   // (MKTileOverlay.canReplaceMapContent on iOS) only when it arrives as a prop
@@ -468,11 +544,37 @@ const MapBox: React.FC<ChildProps> = ({
     setSelectedPoint(null);
   }
 
-  // After a pan/zoom settles, snap back inside the campus bounds if the
-  // gesture pushed the viewport past them. The corrected region is in-bounds,
-  // so its own settle event clamps to null and the correction doesn't loop.
   function handleRegionChangeComplete(region: Region) {
-    const clamped = clampToCampus(region);
+    lastDeltas.current = {
+      lat: region.latitudeDelta,
+      lng: region.longitudeDelta,
+    };
+    const margin = southMarginDeg(region.latitudeDelta);
+
+    if (Platform.OS === "ios") {
+      // iOS is held in-bounds natively (MKMapView.cameraBoundary). The boundary
+      // depends on the zoom, so recompute it from the settled viewport — but
+      // only commit when it actually changed, so a pure pan doesn't re-render
+      // the map (the bail-out keeps the same reference).
+      const next = computeBoundary(
+        region.latitudeDelta,
+        region.longitudeDelta,
+        margin,
+      );
+      setBoundary((prev) =>
+        Math.abs(prev.latitude - next.latitude) < 1e-7 &&
+        Math.abs(prev.latitudeDelta - next.latitudeDelta) < 1e-7 &&
+        Math.abs(prev.longitudeDelta - next.longitudeDelta) < 1e-7
+          ? prev
+          : next,
+      );
+      return;
+    }
+
+    // Android has no native camera boundary, so snap the viewport back inside
+    // the campus bounds after the gesture settles. The corrected region is
+    // in-bounds, so its own settle event clamps to null and doesn't loop.
+    const clamped = clampToCampus(region, margin);
     if (clamped && mapRef.current) {
       mapRef.current.animateToRegion(clamped, 180);
     }
@@ -567,8 +669,13 @@ const MapBox: React.FC<ChildProps> = ({
         // — worst on older devices (react-native-maps #4961). MapKit's native
         // cameraZoomRange clamps with no JS feedback loop. Android keeps the
         // legacy props (backed by a non-freezing native implementation).
+        //
+        // `cameraBoundary` (iOS only, delivered via the local react-native-maps
+        // patch) natively prevents the user from dragging the viewport off
+        // campus — a hard stop with no JS snap-back. It isn't in the rnmaps
+        // types, hence the cast.
         {...(Platform.OS === "ios"
-          ? { cameraZoomRange: ZOOM_RANGE }
+          ? ({ cameraZoomRange: ZOOM_RANGE, cameraBoundary: boundary } as object)
           : { minZoomLevel: 15, maxZoomLevel: 18 })}
         rotateEnabled={false}
         pitchEnabled={false}

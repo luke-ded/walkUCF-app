@@ -97,6 +97,9 @@ function HomePage() {
     top: Platform.OS === "android" ? StatusBar.currentHeight ?? 24 : 47,
     bottom: Platform.OS === "ios" ? 20 : 0,
   });
+  // How much of the map the minimized sheet covers, so the map can be dragged
+  // far enough to reveal the campus bottom above it.
+  const [peekHeight, setPeekHeight] = useState(0);
 
   const sheetRef = useRef<BottomSheetRef>(null);
 
@@ -270,6 +273,7 @@ function HomePage() {
           grass={options.grass}
           parking={options.parking}
           topInset={insets.top}
+          obscuredBottom={peekHeight}
         />
       </View>
 
@@ -288,6 +292,7 @@ function HomePage() {
         topInset={insets.top}
         bottomInset={insets.bottom}
         header={sheetHeader}
+        onPeekHeightChange={setPeekHeight}
       >
         {searchActive ? (
           <Search
