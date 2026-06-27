@@ -239,7 +239,13 @@ const PinMarker: React.FC<{
   return (
     <Marker
       coordinate={coordinate}
+      // `anchor` (fractional) positions the bottom-center tip on Android. iOS
+      // ignores `anchor` for custom child-view markers and instead positions
+      // by `centerOffset` (in points): the view is centered on the coordinate
+      // by default, so shift it up by half the icon height to put the tip on
+      // the point. This restores the offset the `image` prop used to apply.
       anchor={{ x: 0.5, y: 1 }}
+      centerOffset={{ x: 0, y: -MARKER_HEIGHT / 2 }}
       zIndex={zIndex}
       tracksViewChanges={tracks}
     >
