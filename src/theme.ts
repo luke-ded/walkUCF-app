@@ -50,6 +50,19 @@ export interface Theme {
   inputBg: string;
   overlay: string;
   selectedBg: string; // highlighted toggle button
+
+  // ---- Apple-Maps-style surfaces (full-screen map + bottom sheet redesign) ----
+  sheetBg: string; // bottom-sheet background (opaque for legibility over the map)
+  sheetHandle: string; // the grabber pill
+  searchFieldBg: string; // rounded search input fill
+  searchPlaceholder: string; // search placeholder / glyph color
+  secondaryText: string; // Apple "secondary label"
+  tertiaryText: string; // Apple "tertiary label"
+  separator: string; // hairline row separators
+  controlBg: string; // floating circular map buttons
+  controlBorder: string; // hairline border on floating controls / cards
+  fillBg: string; // secondary fill (inactive chips, segmented controls)
+  cardBg: string; // popover / modal card surface
 }
 
 export function buildTheme(dark: boolean): Theme {
@@ -66,6 +79,18 @@ export function buildTheme(dark: boolean): Theme {
     inputBg: dark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.70)",
     overlay: "rgba(0,0,0,0.5)",
     selectedBg: dark ? "rgba(255,202,9,0.50)" : "rgba(255,202,9,0.50)",
+
+    sheetBg: dark ? "#1c1c1e" : "#ffffff",
+    sheetHandle: dark ? "#48484a" : "#c7c7cc",
+    searchFieldBg: dark ? "#2c2c2e" : "#ebebf0",
+    searchPlaceholder: dark ? "rgba(235,235,245,0.5)" : "rgba(60,60,67,0.5)",
+    secondaryText: dark ? "rgba(235,235,245,0.6)" : "rgba(60,60,67,0.6)",
+    tertiaryText: dark ? "rgba(235,235,245,0.3)" : "rgba(60,60,67,0.3)",
+    separator: dark ? "rgba(84,84,88,0.6)" : "rgba(60,60,67,0.18)",
+    controlBg: dark ? "rgba(28,28,30,0.92)" : "rgba(255,255,255,0.95)",
+    controlBorder: dark ? "rgba(84,84,88,0.5)" : "rgba(0,0,0,0.06)",
+    fillBg: dark ? "#2c2c2e" : "#eff0f4",
+    cardBg: dark ? "#1c1c1e" : "#ffffff",
   };
 }
 

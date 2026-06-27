@@ -24,8 +24,8 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { createGraph, dijkstra } from "./Dijkstra";
 import { localStorage } from "../storage";
 import { watchPosition } from "../location";
-import { palette, useTheme } from "../theme";
-import { GraphData, Item, Settings } from "../types";
+import { useTheme } from "../theme";
+import { Item, Settings } from "../types";
 import selectImage from "../assets/gold-select-marker-icon.png";
 import standardImage from "../assets/standard-marker-icon.png";
 import deselectImage from "../assets/gold-deselect-marker-icon.png";
@@ -34,6 +34,14 @@ interface ChildProps {
   triggerRerender: () => void;
   toggleError: (error: boolean) => void;
   stops: Item[];
+  // Route-affecting options now live in HomePage (surfaced in the bottom
+  // sheet) and are passed down so the graph/route stay in sync.
+  buildings: boolean;
+  jaywalking: boolean;
+  grass: boolean;
+  parking: boolean;
+  // Safe-area top inset so the floating map controls clear the status bar.
+  topInset: number;
 }
 
 const displayAllPaths = false; // Change to true to view all paths
@@ -70,6 +78,16 @@ const tileSelectionOptions = new Map<string, string>([
     "https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}.png",
   ],
 ]);
+
+// Friendly display names for the persisted tile keys above (keys are kept
+// stable for storage compatibility).
+const tileLabels: Record<string, string> = {
+  [NATIVE_MAP]: "Default",
+  "OSM Default": "OpenStreetMap",
+  "ERSI Satellite": "Satellite",
+  Stadia: "Bright",
+  Carto: "Light",
+};
 
 // Placeholder template that keeps the (hidden) UrlTile mounted while the native
 // base map is selected; it never becomes visible (opacity 0) or fetched
@@ -122,20 +140,6 @@ const CAMPUS_HOLE: LatLng[] = [
 // re-tessellate this large masking polygon on each location update — a major
 // source of stutter while panning/zooming.
 const CAMPUS_HOLES: LatLng[][] = [CAMPUS_HOLE];
-
-// Parse the persisted map-option toggles. Used only to seed initial state, so
-// it must not run in the render body (which re-runs on every location update).
-function loadMapOptions(): boolean[] {
-  const data = localStorage.getItem("mapOptions");
-  if (data != null) {
-    try {
-      return JSON.parse(data);
-    } catch {
-      // fall through to defaults on malformed data
-    }
-  }
-  return [true, false, false, false];
-}
 
 // The device-location dot lives in its own component, with its own location
 // subscription and state, so a position update re-renders only this marker —
@@ -204,17 +208,15 @@ const MapBox: React.FC<ChildProps> = ({
   stops,
   triggerRerender,
   toggleError,
+  buildings,
+  jaywalking,
+  grass,
+  parking,
+  topInset,
 }) => {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
 
-  // Parse once at mount (not on every render); only seeds the toggle state.
-  const initVals = useMemo(loadMapOptions, []);
-
-  const [buildings, setBuilding] = useState(initVals[0]);
-  const [jaywalking, setJaywalking] = useState(initVals[1]);
-  const [grass, setGrass] = useState(initVals[2]);
-  const [parking, setParking] = useState(initVals[3]);
   const [selectedPoint, setSelectedPoint] = useState<LatLng | null>(null);
   const [paths, setPaths] = useState<number[][]>([]);
   const [loading, setLoading] = useState(false);
@@ -238,7 +240,6 @@ const MapBox: React.FC<ChildProps> = ({
     [buildings, jaywalking, grass, parking],
   );
   const pointMap = data.pointMap;
-  const graphData: GraphData = JSON.parse(localStorage.getItem("graphData")!);
   const settings: Settings = JSON.parse(localStorage.getItem("settings")!);
 
   // The device-location watch + dot now live in <CurrentLocationMarker> so its
@@ -295,11 +296,6 @@ const MapBox: React.FC<ChildProps> = ({
     );
 
     if (displayAllPaths) tempPaths = data.pathnum;
-
-    localStorage.setItem(
-      "mapOptions",
-      JSON.stringify([buildings, jaywalking, grass, parking]),
-    );
 
     setPaths(tempPaths);
     triggerRerender();
@@ -361,21 +357,6 @@ const MapBox: React.FC<ChildProps> = ({
     localStorage.setItem("tile", key);
     setTileSelection(key);
   }
-
-  const walkMinutes =
-    settings.walkSpeed != 0 &&
-    graphData.distanceMi != null &&
-    settings.walkSpeed != null
-      ? (
-          Number(graphData.distanceMi.toFixed(2)) /
-          (settings.walkSpeed / 60)
-        ).toFixed(1)
-      : "0";
-
-  const distanceLabel =
-    settings.units == "imperial"
-      ? graphData.distanceMi.toFixed(2) + " mi"
-      : graphData.distanceKm.toFixed(2) + " km";
 
   function legCoords(path: number[]): LatLng[] {
     const coords: LatLng[] = [];
@@ -448,211 +429,202 @@ const MapBox: React.FC<ChildProps> = ({
     [],
   );
 
-  const optionButtons: { label: string; on: boolean; toggle: () => void }[] = [
-    { label: "Buildings", on: buildings, toggle: () => setBuilding(!buildings) },
-    {
-      label: "Jaywalking",
-      on: jaywalking,
-      toggle: () => setJaywalking(!jaywalking),
-    },
-    {
-      label: "Parking Lots",
-      on: parking,
-      toggle: () => setParking(!parking),
-    },
-    { label: "Grass", on: grass, toggle: () => setGrass(!grass) },
-  ];
-
   return (
     <View style={styles.container}>
-      <View style={[styles.mapWrap, { borderColor: theme.primary }]}>
-        <MapView
-          ref={mapRef}
-          provider={PROVIDER_DEFAULT}
-          style={styles.map}
-          initialRegion={CENTER}
-          // Zoom bounds. On iOS the legacy minZoomLevel/maxZoomLevel props
-          // (deprecated for Apple Maps) enforce limits by re-setting the camera
-          // with animated:TRUE from JS on every region change once you pinch
-          // past a limit; that reset fights the live gesture and freezes the map
-          // — worst on older devices (react-native-maps #4961). MapKit's native
-          // cameraZoomRange clamps with no JS feedback loop. Android keeps the
-          // legacy props (backed by a non-freezing native implementation).
-          {...(Platform.OS === "ios"
-            ? { cameraZoomRange: ZOOM_RANGE }
-            : { minZoomLevel: 15, maxZoomLevel: 18 })}
-          rotateEnabled={false}
-          pitchEnabled={false}
-          // On Android the custom tiles can't replace the base map, so hide it
-          // (mapType "none") to stop the native map's labels showing through.
-          // On iOS the base map stays and UrlTile's shouldReplaceMapContent
-          // handles this instead.
-          mapType={
-            Platform.OS === "android" && tileSelection !== NATIVE_MAP
-              ? "none"
-              : "standard"
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_DEFAULT}
+        style={styles.map}
+        initialRegion={CENTER}
+        // Zoom bounds. On iOS the legacy minZoomLevel/maxZoomLevel props
+        // (deprecated for Apple Maps) enforce limits by re-setting the camera
+        // with animated:TRUE from JS on every region change once you pinch
+        // past a limit; that reset fights the live gesture and freezes the map
+        // — worst on older devices (react-native-maps #4961). MapKit's native
+        // cameraZoomRange clamps with no JS feedback loop. Android keeps the
+        // legacy props (backed by a non-freezing native implementation).
+        {...(Platform.OS === "ios"
+          ? { cameraZoomRange: ZOOM_RANGE }
+          : { minZoomLevel: 15, maxZoomLevel: 18 })}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        // On Android the custom tiles can't replace the base map, so hide it
+        // (mapType "none") to stop the native map's labels showing through.
+        // On iOS the base map stays and UrlTile's shouldReplaceMapContent
+        // handles this instead.
+        mapType={
+          Platform.OS === "android" && tileSelection !== NATIVE_MAP
+            ? "none"
+            : "standard"
+        }
+        onMapReady={() => setLoading(false)}
+      >
+        {/* Kept permanently mounted (even for the native base map, where
+            it's hidden via opacity) so switching options is always a prop
+            update, never a fresh mount. A fresh UrlTile mount fails to apply
+            canReplaceMapContent on iOS, leaving the native labels visible. */}
+        <UrlTile
+          urlTemplate={
+            tileSelection === NATIVE_MAP
+              ? NATIVE_PLACEHOLDER_URL
+              : tileSelectionOptions.get(tileSelection)!
           }
-          onMapReady={() => setLoading(false)}
-        >
-          {/* Kept permanently mounted (even for the native base map, where
-              it's hidden via opacity) so switching options is always a prop
-              update, never a fresh mount. A fresh UrlTile mount fails to apply
-              canReplaceMapContent on iOS, leaving the native labels visible. */}
-          <UrlTile
-            urlTemplate={
-              tileSelection === NATIVE_MAP
-                ? NATIVE_PLACEHOLDER_URL
-                : tileSelectionOptions.get(tileSelection)!
-            }
-            maximumZ={19}
-            // In native-map mode the overlay stays mounted (so switching to a
-            // custom tile set is a prop update, not a remount — see note above)
-            // but is made inert: a minimumZ above the map's max zoom (18) means
-            // MapKit requests no tiles, so its MKTileOverlayRenderer does no
-            // per-zoom rasterization over the live Apple base map. Without this
-            // the invisible (opacity 0) overlay still composites on every zoom
-            // step, which froze the Apple base map during pinch-zoom.
-            minimumZ={tileSelection === NATIVE_MAP ? 22 : 0}
-            flipY={false}
-            shouldReplaceMapContent={replaceApplied && tileSelection !== NATIVE_MAP}
-            opacity={tileSelection === NATIVE_MAP ? 0 : 1}
-            // Belt-and-suspenders: also keep it off the network in native mode
-            // (the nw_connection log churn) since it should never draw there.
-            offlineMode={tileSelection === NATIVE_MAP}
-          />
+          maximumZ={19}
+          // In native-map mode the overlay stays mounted (so switching to a
+          // custom tile set is a prop update, not a remount — see note above)
+          // but is made inert: a minimumZ above the map's max zoom (18) means
+          // MapKit requests no tiles, so its MKTileOverlayRenderer does no
+          // per-zoom rasterization over the live Apple base map. Without this
+          // the invisible (opacity 0) overlay still composites on every zoom
+          // step, which froze the Apple base map during pinch-zoom.
+          minimumZ={tileSelection === NATIVE_MAP ? 22 : 0}
+          flipY={false}
+          shouldReplaceMapContent={replaceApplied && tileSelection !== NATIVE_MAP}
+          opacity={tileSelection === NATIVE_MAP ? 0 : 1}
+          // Belt-and-suspenders: also keep it off the network in native mode
+          // (the nw_connection log churn) since it should never draw there.
+          offlineMode={tileSelection === NATIVE_MAP}
+        />
 
-          {/* Computed route legs */}
-          {legElements}
+        {/* Computed route legs */}
+        {legElements}
 
-          {/* Stop markers */}
-          {stopMarkers}
+        {/* Stop markers */}
+        {stopMarkers}
 
-          {/* Selected entrance marker */}
-          {selectedPoint && (
-            <Marker
-              coordinate={selectedPoint}
-              image={selectImage}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-            />
-          )}
-
-          {/* Current location (self-contained: owns its location watch so
-              position updates don't re-render the rest of the map) */}
-          <CurrentLocationMarker enabled={settings.showLocation} />
-
-          {/* Off-campus dimming mask */}
-          {campusMask}
-        </MapView>
-
-        {/* Tile selector button */}
-        <TouchableOpacity
-          style={styles.stackButton}
-          onPress={() => setTileModal(true)}
-        >
-          <MaterialCommunityIcons name="layers" size={20} color="#000" />
-        </TouchableOpacity>
-
-        {/* Deselect button */}
-        <TouchableOpacity
-          style={[
-            styles.deselectButton,
-            { opacity: selectedPoint ? 1 : 0.5 },
-          ]}
-          onPress={handleDeselect}
-          disabled={!selectedPoint}
-        >
-          <Image source={deselectImage} style={styles.deselectIcon} />
-        </TouchableOpacity>
-
-        {loading && (
-          <ActivityIndicator
-            style={styles.mapLoader}
-            color="#ffffff"
-            size="small"
+        {/* Selected entrance marker */}
+        {selectedPoint && (
+          <Marker
+            coordinate={selectedPoint}
+            image={selectImage}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={false}
           />
         )}
 
-        {/* Distance / time overlay */}
-        <View style={[styles.statOverlay, { borderColor: theme.primary }]}>
-          <Text style={styles.statText}>
-            {walkMinutes} min <Text style={styles.statBold}>|</Text>{" "}
-            {distanceLabel}
-          </Text>
-        </View>
+        {/* Current location (self-contained: owns its location watch so
+            position updates don't re-render the rest of the map) */}
+        <CurrentLocationMarker enabled={settings.showLocation} />
+
+        {/* Off-campus dimming mask */}
+        {campusMask}
+      </MapView>
+
+      {/* Floating map controls (left column, beneath the brand pill) */}
+      <View
+        pointerEvents="box-none"
+        style={[styles.controls, { top: topInset + 60 }]}
+      >
+        <TouchableOpacity
+          style={[
+            styles.controlButton,
+            { backgroundColor: theme.controlBg, borderColor: theme.controlBorder },
+          ]}
+          onPress={() => setTileModal(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Map style"
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="layers-outline"
+            size={22}
+            color={theme.text}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.controlButton,
+            { backgroundColor: theme.controlBg, borderColor: theme.controlBorder },
+            !selectedPoint && styles.controlDisabled,
+          ]}
+          onPress={handleDeselect}
+          disabled={!selectedPoint}
+          accessibilityRole="button"
+          accessibilityLabel="Clear selected location"
+          activeOpacity={0.7}
+        >
+          <Image source={deselectImage} style={styles.deselectIcon} />
+        </TouchableOpacity>
       </View>
 
-      {/* Map option toggles */}
-      <View style={[styles.optionsRow, { borderColor: theme.primary }]}>
-        {optionButtons.map((opt) => (
-          <TouchableOpacity
-            key={opt.label}
-            onPress={opt.toggle}
-            style={[
-              styles.optionButton,
-              { borderColor: theme.primary },
-              opt.on
-                ? { backgroundColor: "rgba(255,202,9,0.5)" }
-                : { backgroundColor: theme.primary },
-            ]}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                { color: opt.on ? theme.text : palette.textDark },
-              ]}
-            >
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {loading && (
+        <ActivityIndicator
+          style={[styles.mapLoader, { top: topInset + 66 }]}
+          color={theme.primary}
+          size="small"
+        />
+      )}
 
-      {/* Tile selection modal */}
-      <Modal visible={tileModal} transparent animationType="fade">
+      {/* Map style modal */}
+      <Modal
+        visible={tileModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTileModal(false)}
+      >
         <Pressable
           style={styles.tileBackdrop}
           onPress={() => setTileModal(false)}
         >
-          <View style={[styles.tileMenu, { borderColor: theme.primary }]}>
-            {[...tileSelectionOptions.keys()].map((key) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.tileOption,
-                  { borderColor: theme.primary },
-                  tileSelection === key
-                    ? { backgroundColor: "rgba(255,202,9,0.5)" }
-                    : { backgroundColor: theme.primary },
-                ]}
-                onPress={() => {
-                  handleTileSelection(key);
-                  setTileModal(false);
-                  if (key !== NATIVE_MAP) setLoading(true);
-                }}
-              >
-                <Text style={{ color: palette.textLight, fontWeight: "600" }}>
-                  {key}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Pressable
+            style={[
+              styles.tileCard,
+              { backgroundColor: theme.cardBg, borderColor: theme.controlBorder },
+            ]}
+          >
+            <Text style={[styles.tileTitle, { color: theme.secondaryText }]}>
+              Map Style
+            </Text>
+            {[...tileSelectionOptions.keys()].map((key, i) => {
+              const active = tileSelection === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    styles.tileOption,
+                    i > 0 && {
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      borderTopColor: theme.separator,
+                    },
+                  ]}
+                  onPress={() => {
+                    handleTileSelection(key);
+                    setTileModal(false);
+                    if (key !== NATIVE_MAP) setLoading(true);
+                  }}
+                  activeOpacity={0.6}
+                >
+                  <Text style={[styles.tileOptionText, { color: theme.text }]}>
+                    {tileLabels[key] ?? key}
+                  </Text>
+                  {active && (
+                    <Ionicons name="checkmark" size={20} color={theme.primary} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
   );
 };
 
+const SHADOW = Platform.select({
+  ios: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+  },
+  android: { elevation: 4 },
+  default: {},
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  mapWrap: {
-    flex: 1,
-    margin: 8,
-    borderRadius: 6,
-    borderWidth: 2,
-    overflow: "hidden",
   },
   map: {
     ...StyleSheet.absoluteFillObject,
@@ -676,98 +648,69 @@ const styles = StyleSheet.create({
     borderRadius: 8.5,
     backgroundColor: "#1975c8",
   },
-  stackButton: {
+  controls: {
     position: "absolute",
-    top: 12,
-    left: 12,
-    height: 33,
-    width: 33,
-    borderRadius: 4,
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 3,
+    left: 14,
+    gap: 10,
   },
-  deselectButton: {
-    position: "absolute",
-    top: 52,
-    left: 12,
-    height: 33,
-    width: 33,
-    borderRadius: 4,
-    backgroundColor: "#ffffff",
+  controlButton: {
+    height: 42,
+    width: 42,
+    borderRadius: 21,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 3,
+    ...SHADOW,
+  },
+  controlDisabled: {
+    opacity: 0.4,
   },
   deselectIcon: {
-    height: 26,
-    width: 17,
+    height: 24,
+    width: 16,
     resizeMode: "contain",
   },
   mapLoader: {
     position: "absolute",
-    bottom: 6,
-    left: 8,
-  },
-  statOverlay: {
-    position: "absolute",
-    top: 0,
+    left: 0,
     right: 0,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderBottomWidth: 2,
-    borderLeftWidth: 2,
-    borderBottomLeftRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  statText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  statBold: {
-    fontWeight: "700",
-  },
-  optionsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingBottom: 4,
-    gap: 6,
-  },
-  optionButton: {
-    borderWidth: 2,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  optionText: {
-    fontWeight: "700",
-    fontSize: 13,
   },
   tileBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     alignItems: "center",
     justifyContent: "center",
+    padding: 24,
   },
-  tileMenu: {
-    width: 200,
-    borderWidth: 2,
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    padding: 8,
-    gap: 8,
+  tileCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 6,
+    overflow: "hidden",
+    ...SHADOW,
+  },
+  tileTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
   tileOption: {
-    borderWidth: 2,
-    borderRadius: 4,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  tileOptionText: {
+    fontSize: 16,
+    fontWeight: "500",
   },
 });
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,25 +10,87 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { localStorage } from "../storage";
 import { palette, permitColor, useTheme, Theme } from "../theme";
-import { GraphData, Item, Settings } from "../types";
+import { Item } from "../types";
+
+export type RouteOptionKey = "buildings" | "jaywalking" | "parking" | "grass";
 
 interface ChildProps {
   triggerRerender: () => void;
   setStops: (stops: Item[]) => void;
   stops: Item[];
+  bottomInset: number;
+  options: Record<RouteOptionKey, boolean>;
+  onToggleOption: (key: RouteOptionKey) => void;
 }
+
+const OPTION_DEFS: { key: RouteOptionKey; label: string }[] = [
+  { key: "buildings", label: "Buildings" },
+  { key: "jaywalking", label: "Jaywalking" },
+  { key: "parking", label: "Parking" },
+  { key: "grass", label: "Grass" },
+];
+
+const RouteOptions: React.FC<{
+  theme: Theme;
+  options: Record<RouteOptionKey, boolean>;
+  onToggle: (key: RouteOptionKey) => void;
+}> = ({ theme, options, onToggle }) => (
+  <View style={styles.optionsBlock}>
+    <Text style={[styles.sectionLabel, { color: theme.secondaryText }]}>
+      Route options
+    </Text>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.optionsRow}
+      keyboardShouldPersistTaps="handled"
+    >
+      {OPTION_DEFS.map(({ key, label }) => {
+        const on = options[key];
+        return (
+          <TouchableOpacity
+            key={key}
+            onPress={() => onToggle(key)}
+            activeOpacity={0.7}
+            style={[
+              styles.optionChip,
+              on
+                ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                : { backgroundColor: theme.fillBg, borderColor: theme.fillBg },
+            ]}
+          >
+            <Ionicons
+              name={on ? "checkmark-circle" : "ellipse-outline"}
+              size={15}
+              color={on ? (theme.dark ? palette.textDark : palette.textLight) : theme.secondaryText}
+            />
+            <Text
+              style={[
+                styles.optionChipText,
+                { color: on ? (theme.dark ? palette.textDark : palette.textLight) : theme.text },
+              ]}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  </View>
+);
 
 const RouteList: React.FC<ChildProps> = ({
   triggerRerender,
   setStops,
   stops,
+  bottomInset,
+  options,
+  onToggleOption,
 }) => {
   const theme = useTheme();
   const [, setSelectedItem] = useState("");
 
   const itemsList = stops;
-  const graphData: GraphData = JSON.parse(localStorage.getItem("graphData")!);
-  const settings: Settings = JSON.parse(localStorage.getItem("settings")!);
 
   function removeStop(item: Item) {
     const index = itemsList.indexOf(item);
@@ -81,42 +144,49 @@ const RouteList: React.FC<ChildProps> = ({
     setStops([]);
   }
 
-  const walkMinutes =
-    settings.walkSpeed != 0 &&
-    graphData.distanceMi != null &&
-    settings.walkSpeed != null
-      ? (
-          Number(graphData.distanceMi.toFixed(2)) /
-          (settings.walkSpeed / 60)
-        ).toFixed(1)
-      : "0";
-
-  const distanceLabel =
-    settings.units == "imperial"
-      ? graphData.distanceMi.toFixed(2) + " mi"
-      : graphData.distanceKm.toFixed(2) + " km";
-
   const renderItem = (item: Item, index: number) => {
+    const isCurrentLocation = item.name === "Current Location";
     const entranceLabel =
       item.selectedEntrance === -1
-        ? "Closest Entrance"
+        ? "Closest entrance"
         : item.selectedEntrance === 1
-          ? "Main Entrance"
+          ? "Main entrance"
           : "Door " + item.selectedEntrance;
+    const first = index === 0;
+    const last = index === itemsList.length - 1;
 
     return (
       <TouchableOpacity
         onPress={() => handleItemChange(item)}
-        style={[styles.row, { borderBottomColor: theme.primary }]}
+        activeOpacity={0.6}
+        style={styles.row}
       >
-        <View style={styles.rowTop}>
-          <View style={styles.nameWrap}>
-            <Text style={[styles.name, { color: theme.text }]}>
+        <View style={styles.indexColumn}>
+          <View style={[styles.indexBadge, { backgroundColor: theme.primary }]}>
+            {isCurrentLocation ? (
+              <Ionicons
+                name="navigate"
+                size={13}
+                color={theme.dark ? palette.textDark : palette.textLight}
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.indexText,
+                  { color: theme.dark ? palette.textDark : palette.textLight },
+                ]}
+              >
+                {index + 1}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.rowMain}>
+          <View style={styles.titleLine}>
+            <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
               {item.name}
             </Text>
-            {item.name === "Current Location" && (
-              <Ionicons name="navigate" size={18} color="#1975c8" style={{ marginLeft: 6 }} />
-            )}
             {item.permitType?.map((permit) => (
               <View
                 key={permit}
@@ -126,68 +196,88 @@ const RouteList: React.FC<ChildProps> = ({
               </View>
             ))}
           </View>
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
-            onPress={() => removeStop(item)}
-          >
-            <Ionicons name="close" size={18} color={theme.dark ? palette.textLight : palette.textDark} />
-          </TouchableOpacity>
+          <Text style={[styles.meta, { color: theme.secondaryText }]} numberOfLines={1}>
+            {first ? "Start" : last ? "Destination" : "Stop " + (index + 1)}
+            {item.abbreviation ? "  ·  " + item.abbreviation : ""}
+            {!isCurrentLocation ? "  ·  " + entranceLabel : ""}
+          </Text>
         </View>
-        <View style={styles.rowBottom}>
-          <View style={styles.metaWrap}>
-            <Text style={[styles.metaAccent, { color: theme.primary }]}>
-              {item.abbreviation}
-            </Text>
-            <Text style={[styles.meta, { color: theme.text }]}>
-              {" "}| Stop {index + 1}
-            </Text>
-            {item.name !== "Current Location" && (
-              <Text style={[styles.meta, { color: theme.text }]}>
-                {" "}| {entranceLabel}
-              </Text>
-            )}
-          </View>
-          <View style={styles.reorderWrap}>
+
+        <View style={styles.controls}>
+          <View style={styles.reorderColumn}>
             <TouchableOpacity
-              style={[styles.reorderButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
-              onPress={() => swapDown(item)}
-            >
-              <Text style={[styles.reorderText, { color: theme.dark ? palette.textLight : palette.textDark }]}>▼</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.reorderButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
               onPress={() => swapUp(item)}
+              disabled={first}
+              hitSlop={{ top: 4, bottom: 2, left: 6, right: 6 }}
+              style={first && styles.controlDisabled}
             >
-              <Text style={[styles.reorderText, { color: theme.dark ? palette.textLight : palette.textDark }]}>▲</Text>
+              <Ionicons name="chevron-up" size={18} color={theme.secondaryText} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => swapDown(item)}
+              disabled={last}
+              hitSlop={{ top: 2, bottom: 4, left: 6, right: 6 }}
+              style={last && styles.controlDisabled}
+            >
+              <Ionicons name="chevron-down" size={18} color={theme.secondaryText} />
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={[styles.removeButton, { backgroundColor: theme.fillBg }]}
+            onPress={() => removeStop(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${item.name}`}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Ionicons name="close" size={16} color={theme.secondaryText} />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={[styles.container, { borderColor: theme.primary, backgroundColor: theme.panelBg }]}>
-      <View style={[styles.header, { borderBottomColor: theme.primary }]}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Route</Text>
-        <View style={styles.headerRight}>
-          <Text style={[styles.headerStat, { color: theme.subText }]}>
-            {walkMinutes} min <Text style={{ fontWeight: "700", color: theme.text }}>|</Text> {distanceLabel}
+    <View style={styles.container}>
+      <RouteOptions theme={theme} options={options} onToggle={onToggleOption} />
+
+      {itemsList.length > 0 && (
+        <View style={styles.subHeader}>
+          <Text style={[styles.subHeaderTitle, { color: theme.text }]}>
+            {itemsList.length} {itemsList.length === 1 ? "stop" : "stops"}
           </Text>
           <TouchableOpacity
-            style={[styles.clearButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
             onPress={clearList}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={[styles.clearText, { color: theme.dark ? palette.textLight : palette.textDark }]}>
-              Clear
-            </Text>
+            <Text style={[styles.clearText, { color: theme.primary }]}>Clear</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      )}
+
       <FlatList
         data={itemsList}
         keyExtractor={(_item, index) => String(index)}
         keyboardShouldPersistTaps="handled"
+        ItemSeparatorComponent={() => (
+          <View style={[styles.separator, { backgroundColor: theme.separator }]} />
+        )}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: bottomInset + 16 },
+          itemsList.length === 0 && styles.listContentEmpty,
+        ]}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Ionicons name="map-outline" size={34} color={theme.tertiaryText} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+              No destinations yet
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: theme.secondaryText }]}>
+              Tap the search bar above to add buildings and plan the fastest walk
+              across campus.
+            </Text>
+          </View>
+        }
         renderItem={({ item, index }) => renderItem(item, index)}
       />
     </View>
@@ -197,105 +287,143 @@ const RouteList: React.FC<ChildProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    borderWidth: 2,
-    borderRadius: 4,
   },
-  header: {
+  optionsBlock: {
+    paddingTop: 6,
+    paddingBottom: 10,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  optionsRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  optionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  optionChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  subHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
-  headerTitle: {
-    fontSize: 20,
+  subHeaderTitle: {
+    fontSize: 15,
     fontWeight: "700",
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerStat: {
-    fontSize: 14,
-  },
-  clearButton: {
-    marginLeft: 10,
-    borderWidth: 2,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
   },
   clearText: {
-    fontWeight: "700",
-  },
-  row: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  rowTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  nameWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    flex: 1,
-    gap: 4,
-  },
-  name: {
     fontSize: 15,
     fontWeight: "600",
   },
-  rowBottom: {
-    marginTop: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  listContent: {
+    flexGrow: 1,
   },
-  metaWrap: {
+  listContentEmpty: {
+    justifyContent: "center",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 52,
+  },
+  indexColumn: {
+    width: 32,
+    alignItems: "flex-start",
+  },
+  indexBadge: {
+    height: 24,
+    width: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  indexText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  rowMain: {
+    flex: 1,
+    marginRight: 8,
+  },
+  titleLine: {
     flexDirection: "row",
     flexWrap: "wrap",
-    flex: 1,
+    alignItems: "center",
+    gap: 6,
   },
-  metaAccent: {
-    fontSize: 13,
+  name: {
+    fontSize: 16,
+    fontWeight: "600",
+    flexShrink: 1,
   },
   meta: {
     fontSize: 13,
+    marginTop: 2,
   },
-  reorderWrap: {
+  controls: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  reorderButton: {
-    marginLeft: 6,
-    borderWidth: 2,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  reorderColumn: {
+    alignItems: "center",
   },
-  reorderText: {
-    fontSize: 16,
-    fontWeight: "700",
+  controlDisabled: {
+    opacity: 0.3,
   },
-  iconButton: {
-    borderWidth: 2,
-    borderRadius: 4,
-    padding: 6,
-    marginLeft: 8,
+  removeButton: {
+    height: 28,
+    width: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   permitChip: {
-    borderRadius: 3,
+    borderRadius: 4,
     paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
   },
   permitText: {
     fontSize: 8,
-    fontWeight: "600",
+    fontWeight: "700",
     color: palette.textDark,
+  },
+  empty: {
+    alignItems: "center",
+    paddingHorizontal: 36,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 19,
   },
 });
 

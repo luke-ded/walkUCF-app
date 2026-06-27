@@ -1,10 +1,8 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
-  Keyboard,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -17,8 +15,15 @@ import { palette, permitColor, useTheme, Theme } from "../theme";
 import { Item } from "../types";
 
 interface ChildProps {
+  /** Current query, owned by the sheet header (HomePage). */
+  searchTerm: string;
   triggerRerender: () => void;
   setStops: (updater: (prev: Item[]) => Item[]) => void;
+  /** Called after a stop is added, so the sheet can return to the route view. */
+  onAdded: () => void;
+  bottomInset: number;
+  /** Extra bottom space to keep the last rows above the keyboard. */
+  keyboardHeight: number;
 }
 
 interface ItemProps {
@@ -45,6 +50,33 @@ const PermitChips: React.FC<{ permits?: string[] }> = ({ permits }) => {
   );
 };
 
+const EntranceButton: React.FC<{
+  theme: Theme;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}> = ({ theme, label, active, onPress }) => (
+  <TouchableOpacity
+    style={[
+      styles.entranceButton,
+      active
+        ? { backgroundColor: theme.primary }
+        : { backgroundColor: theme.fillBg },
+    ]}
+    onPress={onPress}
+    activeOpacity={0.7}
+  >
+    <Text
+      style={[
+        styles.entranceButtonText,
+        { color: active ? (theme.dark ? palette.textDark : palette.textLight) : theme.text },
+      ]}
+    >
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
 const ItemRenderer: React.FC<ItemProps> = ({
   item,
   theme,
@@ -57,32 +89,33 @@ const ItemRenderer: React.FC<ItemProps> = ({
   function handleItemChange(entrance: number) {
     setSelectedEntrance(entrance);
     setSelectedItem(item.key);
-
     localStorage.setItem(
       "selectedPoint",
       JSON.stringify({ ...item, selectedEntrance: entrance }),
     );
-
     triggerRerender();
   }
 
   return (
-    <View style={styles.itemBody}>
-      <View style={styles.itemHeader}>
-        <View style={styles.itemNameWrap}>
-          <Text style={[styles.itemName, { color: theme.text }]}>
+    <View style={styles.row}>
+      <View style={[styles.leadingIcon, { backgroundColor: theme.fillBg }]}>
+        <Ionicons name="business" size={18} color={theme.primary} />
+      </View>
+      <View style={styles.rowMain}>
+        <View style={styles.titleLine}>
+          <Text style={[styles.itemName, { color: theme.text }]} numberOfLines={1}>
             {item.name}
           </Text>
           <PermitChips permits={item.permitType} />
         </View>
-        <Text style={[styles.abbrev, { color: theme.primary }]}>
-          {item.abbreviation}
-        </Text>
-      </View>
-      <View style={styles.entranceRow}>
-        <View style={styles.entranceButtons}>
-          <Text style={[styles.entranceLabel, { color: theme.subText }]}>
-            Entrance:{" "}
+        {item.abbreviation ? (
+          <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
+            {item.abbreviation}
+          </Text>
+        ) : null}
+        <View style={styles.entranceRow}>
+          <Text style={[styles.entranceLabel, { color: theme.secondaryText }]}>
+            Entrance
           </Text>
           <EntranceButton
             theme={theme}
@@ -103,64 +136,42 @@ const ItemRenderer: React.FC<ItemProps> = ({
             );
           })}
         </View>
-        <TouchableOpacity
-          style={[styles.addButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
-          onPress={() => addItem(item, selectedEntrance)}
-        >
-          <Ionicons name="add" size={20} color={theme.dark ? palette.textLight : palette.textDark} />
-        </TouchableOpacity>
       </View>
+      <TouchableOpacity
+        style={[styles.addButton, { backgroundColor: theme.primary }]}
+        onPress={() => addItem(item, selectedEntrance)}
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${item.name} to route`}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name="add"
+          size={22}
+          color={theme.dark ? palette.textDark : palette.textLight}
+        />
+      </TouchableOpacity>
     </View>
   );
 };
 
-const EntranceButton: React.FC<{
-  theme: Theme;
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}> = ({ theme, label, active, onPress }) => (
-  <TouchableOpacity
-    style={[
-      styles.entranceButton,
-      { borderColor: theme.primary },
-      active
-        ? { backgroundColor: "rgba(255,202,9,0.5)" }
-        : { backgroundColor: theme.primary },
-    ]}
-    onPress={onPress}
-  >
-    <Text
-      style={{
-        fontWeight: "700",
-        fontSize: 13,
-        color: active ? theme.text : palette.textDark,
-      }}
-    >
-      {label}
-    </Text>
-  </TouchableOpacity>
-);
-
-const Search: React.FC<ChildProps> = ({ triggerRerender, setStops }) => {
+const Search: React.FC<ChildProps> = ({
+  searchTerm,
+  triggerRerender,
+  setStops,
+  onAdded,
+  bottomInset,
+  keyboardHeight,
+}) => {
   const theme = useTheme();
-  const [searchTerm, setSearchTerm] = useState("");
   const [, setSelectedItem] = useState("");
   const listRef = useRef<FlatList<Item>>(null);
 
   const itemsList = locations as Item[];
 
-  function handleSearchChange(text: string) {
-    setSearchTerm(text);
-    // Reset the results list to the top so the most relevant matches for the
-    // new query are visible. Scrolling to offset 0 is a no-op when already there.
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
-  }
-
-  function clearSearch() {
-    setSearchTerm("");
-    Keyboard.dismiss();
-  }
+  // Keep the results pinned to the most relevant matches as the query changes.
+  useEffect(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [searchTerm]);
 
   var permissionStatusData = localStorage.getItem("permissionStatus");
   const permissionStatus: boolean =
@@ -173,6 +184,7 @@ const Search: React.FC<ChildProps> = ({ triggerRerender, setStops }) => {
     );
     const newItem = { ...item, selectedEntrance };
     setStops((prevStops) => [...(prevStops || []), newItem]);
+    onAdded();
   }
 
   function calcNearestPoint(): Item {
@@ -228,177 +240,155 @@ const Search: React.FC<ChildProps> = ({ triggerRerender, setStops }) => {
     searchTerm.length === 0 && hasGeolocation && permissionStatus !== false;
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.searchBarWrap, { borderColor: theme.primary, backgroundColor: theme.inputBg }]}>
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search"
-          placeholderTextColor={theme.dark ? "rgba(229,229,229,0.6)" : "rgba(64,64,64,0.6)"}
-          value={searchTerm}
-          onChangeText={handleSearchChange}
-          returnKeyType="search"
-          onSubmitEditing={Keyboard.dismiss}
-        />
-        {searchTerm.length > 0 ? (
-          <TouchableOpacity
-            onPress={clearSearch}
-            style={styles.searchIcon}
-            accessibilityLabel="Clear search"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="close-circle" size={22} color={theme.text} />
-          </TouchableOpacity>
-        ) : (
-          <Ionicons name="search" size={22} color={theme.text} style={styles.searchIcon} />
-        )}
-      </View>
-      <View style={[styles.listWrap, { borderColor: theme.primary, backgroundColor: theme.panelBg }]}>
-        <FlatList
-          ref={listRef}
-          data={filtered}
-          keyExtractor={(item) => item.key}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          ListHeaderComponent={
-            showCurrentLocation ? (
-              <View style={[styles.row, styles.currentRow, { borderBottomColor: theme.primary }]}>
-                <View style={styles.currentLabelWrap}>
-                  <Text style={[styles.itemName, { color: theme.text, fontWeight: "700" }]}>
-                    Current Location
-                  </Text>
-                  <Ionicons name="navigate" size={20} color="#1975c8" style={{ marginLeft: 8 }} />
-                </View>
-                <TouchableOpacity
-                  style={[styles.addButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
-                  onPress={() => addItem(calcNearestPoint(), 1)}
-                >
-                  <Ionicons name="add" size={20} color={theme.dark ? palette.textLight : palette.textDark} />
-                </TouchableOpacity>
+    <FlatList
+      ref={listRef}
+      data={filtered}
+      keyExtractor={(item) => item.key}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      showsVerticalScrollIndicator
+      contentContainerStyle={{ paddingBottom: bottomInset + keyboardHeight + 16 }}
+      ItemSeparatorComponent={() => (
+        <View style={[styles.separator, { backgroundColor: theme.separator }]} />
+      )}
+      ListHeaderComponent={
+        showCurrentLocation ? (
+          <View>
+            <View style={styles.row}>
+              <View style={[styles.leadingIcon, { backgroundColor: "rgba(25,117,200,0.15)" }]}>
+                <Ionicons name="navigate" size={18} color="#1975c8" />
               </View>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <View style={[styles.row, { borderBottomColor: theme.primary }]}>
-              <ItemRenderer
-                item={item}
-                theme={theme}
-                addItem={addItem}
-                triggerRerender={triggerRerender}
-                setSelectedItem={setSelectedItem}
-              />
+              <View style={styles.rowMain}>
+                <Text style={[styles.itemName, { color: theme.text }]}>
+                  Current Location
+                </Text>
+                <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
+                  Route from where you are
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.addButton, { backgroundColor: theme.primary }]}
+                onPress={() => addItem(calcNearestPoint(), 1)}
+                accessibilityRole="button"
+                accessibilityLabel="Add current location to route"
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="add"
+                  size={22}
+                  color={theme.dark ? palette.textDark : palette.textLight}
+                />
+              </TouchableOpacity>
             </View>
-          )}
+            <View style={[styles.separator, { backgroundColor: theme.separator }]} />
+          </View>
+        ) : null
+      }
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Ionicons name="search" size={26} color={theme.tertiaryText} />
+          <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
+            No places match “{searchTerm}”.
+          </Text>
+        </View>
+      }
+      renderItem={({ item }) => (
+        <ItemRenderer
+          item={item}
+          theme={theme}
+          addItem={addItem}
+          triggerRerender={triggerRerender}
+          setSelectedItem={setSelectedItem}
         />
-      </View>
-    </View>
+      )}
+    />
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  searchBarWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 2,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  searchIcon: {
-    marginRight: 10,
-  },
-  listWrap: {
-    flex: 1,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderBottomWidth: 2,
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 4,
-  },
   row: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  currentRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  currentLabelWrap: {
-    flexDirection: "row",
-    alignItems: "center",
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 60,
   },
-  itemBody: {
-    width: "100%",
-  },
-  itemHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  itemNameWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    flex: 1,
-    gap: 4,
-  },
-  itemName: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  abbrev: {
-    fontSize: 12,
-    marginLeft: 6,
-    marginTop: 2,
-  },
-  entranceRow: {
-    marginTop: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  entranceButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    flex: 1,
-    gap: 6,
-  },
-  entranceLabel: {
-    fontSize: 14,
-  },
-  entranceButton: {
-    borderWidth: 2,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  addButton: {
-    borderWidth: 2,
-    borderRadius: 4,
-    padding: 6,
+  leadingIcon: {
+    height: 36,
+    width: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8,
+    marginRight: 12,
+  },
+  rowMain: {
+    flex: 1,
+  },
+  titleLine: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  subtitle: {
+    fontSize: 13,
+    marginTop: 1,
+  },
+  entranceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+  },
+  entranceLabel: {
+    fontSize: 13,
+    marginRight: 2,
+  },
+  entranceButton: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    minWidth: 30,
+    alignItems: "center",
+  },
+  entranceButtonText: {
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  addButton: {
+    height: 34,
+    width: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
   },
   permitChip: {
-    borderRadius: 3,
+    borderRadius: 4,
     paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
   },
   permitText: {
     fontSize: 8,
-    fontWeight: "600",
+    fontWeight: "700",
     color: palette.textDark,
+  },
+  empty: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 48,
+    gap: 10,
+  },
+  emptyText: {
+    fontSize: 15,
   },
 });
 
