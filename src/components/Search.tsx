@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
@@ -145,8 +146,21 @@ const Search: React.FC<ChildProps> = ({ triggerRerender, setStops }) => {
   const theme = useTheme();
   const [searchTerm, setSearchTerm] = useState("");
   const [, setSelectedItem] = useState("");
+  const listRef = useRef<FlatList<Item>>(null);
 
   const itemsList = locations as Item[];
+
+  function handleSearchChange(text: string) {
+    setSearchTerm(text);
+    // Reset the results list to the top so the most relevant matches for the
+    // new query are visible. Scrolling to offset 0 is a no-op when already there.
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }
+
+  function clearSearch() {
+    setSearchTerm("");
+    Keyboard.dismiss();
+  }
 
   var permissionStatusData = localStorage.getItem("permissionStatus");
   const permissionStatus: boolean =
@@ -221,15 +235,30 @@ const Search: React.FC<ChildProps> = ({ triggerRerender, setStops }) => {
           placeholder="Search"
           placeholderTextColor={theme.dark ? "rgba(229,229,229,0.6)" : "rgba(64,64,64,0.6)"}
           value={searchTerm}
-          onChangeText={setSearchTerm}
+          onChangeText={handleSearchChange}
+          returnKeyType="search"
+          onSubmitEditing={Keyboard.dismiss}
         />
-        <Ionicons name="search" size={22} color={theme.text} style={styles.searchIcon} />
+        {searchTerm.length > 0 ? (
+          <TouchableOpacity
+            onPress={clearSearch}
+            style={styles.searchIcon}
+            accessibilityLabel="Clear search"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close-circle" size={22} color={theme.text} />
+          </TouchableOpacity>
+        ) : (
+          <Ionicons name="search" size={22} color={theme.text} style={styles.searchIcon} />
+        )}
       </View>
       <View style={[styles.listWrap, { borderColor: theme.primary, backgroundColor: theme.panelBg }]}>
         <FlatList
+          ref={listRef}
           data={filtered}
           keyExtractor={(item) => item.key}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           ListHeaderComponent={
             showCurrentLocation ? (
               <View style={[styles.row, styles.currentRow, { borderBottomColor: theme.primary }]}>
