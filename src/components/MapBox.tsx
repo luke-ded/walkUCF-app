@@ -23,7 +23,7 @@ import MapView, {
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { createGraph, dijkstra } from "./Dijkstra";
 import { localStorage } from "../storage";
-import { getCurrentPosition } from "../location";
+import { watchPosition } from "../location";
 import { palette, useTheme } from "../theme";
 import { GraphData, Item, Settings } from "../types";
 import selectImage from "../assets/gold-select-marker-icon.png";
@@ -96,6 +96,25 @@ const CAMPUS_HOLE: LatLng[] = [
   { latitude: 28.61173, longitude: -81.18678 },
   { latitude: 28.59089, longitude: -81.18678 },
 ];
+// Stable reference for the Polygon `holes` prop. Building `[CAMPUS_HOLE]`
+// inline rebuilds the array every render, which makes react-native-maps
+// re-tessellate this large masking polygon on each location update — a major
+// source of stutter while panning/zooming.
+const CAMPUS_HOLES: LatLng[][] = [CAMPUS_HOLE];
+
+// Parse the persisted map-option toggles. Used only to seed initial state, so
+// it must not run in the render body (which re-runs on every location update).
+function loadMapOptions(): boolean[] {
+  const data = localStorage.getItem("mapOptions");
+  if (data != null) {
+    try {
+      return JSON.parse(data);
+    } catch {
+      // fall through to defaults on malformed data
+    }
+  }
+  return [true, false, false, false];
+}
 
 const MapBox: React.FC<ChildProps> = ({
   stops,
@@ -105,9 +124,8 @@ const MapBox: React.FC<ChildProps> = ({
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
 
-  var initVals = [true, false, false, false];
-  var initData = localStorage.getItem("mapOptions");
-  if (initData != undefined) initVals = JSON.parse(initData);
+  // Parse once at mount (not on every render); only seeds the toggle state.
+  const initVals = useMemo(loadMapOptions, []);
 
   const [buildings, setBuilding] = useState(initVals[0]);
   const [jaywalking, setJaywalking] = useState(initVals[1]);
@@ -119,6 +137,7 @@ const MapBox: React.FC<ChildProps> = ({
   const [loading, setLoading] = useState(false);
   const [tileModal, setTileModal] = useState(false);
   const [tileSelection, setTileSelection] = useState<string>(resolveInitialTile);
+  const [trackCurrent, setTrackCurrent] = useState(true);
 
   // Retrieve graph data (memoized; rebuilds only when options change).
   const data = useMemo(
@@ -129,35 +148,51 @@ const MapBox: React.FC<ChildProps> = ({
   const graphData: GraphData = JSON.parse(localStorage.getItem("graphData")!);
   const settings: Settings = JSON.parse(localStorage.getItem("settings")!);
 
-  async function currentLocationHandler() {
-    const currentSettings: Settings = JSON.parse(
-      localStorage.getItem("settings")!,
-    );
-
-    if (currentSettings.showLocation === false) {
-      if (currentLocation !== null) setCurrentLocation(null);
+  // Track the device location with a single long-lived watch subscription.
+  // Re-runs only when the showLocation setting changes (settings updates flow
+  // through triggerRerender, re-rendering this component). Polling here with a
+  // timer previously froze the map and spammed main-thread authorization
+  // warnings; see watchPosition in location.ts.
+  useEffect(() => {
+    if (!settings.showLocation) {
+      setCurrentLocation(null);
       return;
     }
 
-    const pos = await getCurrentPosition();
-    if (!pos) return;
+    let cancelled = false;
+    let stop: (() => void) | undefined;
 
-    if (
-      currentLocation &&
-      currentLocation.latitude === pos.lat &&
-      currentLocation.longitude === pos.lon
-    )
-      return;
+    watchPosition((pos) => {
+      setCurrentLocation({ latitude: pos.lat, longitude: pos.lon });
+      localStorage.setItem(
+        "currentLocation",
+        JSON.stringify([pos.lat, pos.lon]),
+      );
+    }).then((unsubscribe) => {
+      if (cancelled) unsubscribe();
+      else stop = unsubscribe;
+    });
 
-    setCurrentLocation({ latitude: pos.lat, longitude: pos.lon });
-    localStorage.setItem("currentLocation", JSON.stringify([pos.lat, pos.lon]));
-  }
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [settings.showLocation]);
 
+  // Keep react-native-maps from re-rasterizing the current-location marker's
+  // custom view on every frame. `tracksViewChanges` defaults to true, which
+  // forces a bitmap snapshot of the marker each frame of any pan/zoom gesture —
+  // the dot has a shadow and nested views, so this was the dominant cause of
+  // the zoom freezes. We allow a brief tracking window when the dot (re)appears
+  // so its snapshot is captured once, then disable tracking. Position updates
+  // still move the marker via its coordinate prop without view tracking.
+  const showLocationDot = settings.showLocation && currentLocation != null;
   useEffect(() => {
-    currentLocationHandler();
-    const interval = setInterval(currentLocationHandler, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    if (!showLocationDot) return;
+    setTrackCurrent(true);
+    const id = setTimeout(() => setTrackCurrent(false), 1500);
+    return () => clearTimeout(id);
+  }, [showLocationDot]);
 
   // Recompute the route whenever stops or map options change.
   useEffect(() => {
@@ -294,6 +329,68 @@ const MapBox: React.FC<ChildProps> = ({
     return coords;
   }
 
+  // Precompute the route legs and stop markers. These depend only on the
+  // route/options, not on the device location, so memoizing them keeps the
+  // frequent location-update re-renders from rebuilding (and re-sending to
+  // native) every overlay — which otherwise stutters panning and zooming.
+  const legElements = useMemo(
+    () =>
+      paths.map((path, index) => (
+        <Polyline
+          key={"leg-" + index}
+          coordinates={legCoords(path)}
+          strokeColor="rgba(0,0,255,0.6)"
+          strokeWidth={4}
+        />
+      )),
+    [paths, pointMap],
+  );
+
+  const stopMarkers = useMemo(
+    () =>
+      stops.map((point, index) => {
+        if (!point.Entrances) return null;
+        const entrance = point.Entrances[point.selectedEntrance - 1];
+        if (!entrance) return null;
+        const label =
+          index === 0
+            ? "Start: " + point.name
+            : index === stops.length - 1
+              ? "End: " + point.name
+              : "Stop " + (index + 1) + ": " + point.name;
+        return (
+          <Marker
+            key={"stop-" + index}
+            coordinate={{ latitude: entrance.lat, longitude: entrance.lon }}
+            image={standardImage}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={false}
+          >
+            <Callout>
+              <Text>{label}</Text>
+            </Callout>
+          </Marker>
+        );
+      }),
+    [stops],
+  );
+
+  // Stable element for the large off-campus dimming mask. Memoizing it (props
+  // are all module constants) means a location-update re-render never re-sends
+  // this polygon to native, avoiding any chance of re-tessellation.
+  const campusMask = useMemo(
+    () => (
+      <Polygon
+        coordinates={OUTER_RING}
+        holes={CAMPUS_HOLES}
+        strokeColor="#ffca09"
+        strokeWidth={2}
+        fillColor="rgba(0,0,0,0.4)"
+      />
+    ),
+    [],
+  );
+
   const optionButtons: { label: string; on: boolean; toggle: () => void }[] = [
     { label: "Buildings", on: buildings, toggle: () => setBuilding(!buildings) },
     {
@@ -343,45 +440,27 @@ const MapBox: React.FC<ChildProps> = ({
                 : tileSelectionOptions.get(tileSelection)!
             }
             maximumZ={19}
+            // In native-map mode the overlay stays mounted (so switching to a
+            // custom tile set is a prop update, not a remount — see note above)
+            // but is made inert: a minimumZ above the map's max zoom (18) means
+            // MapKit requests no tiles, so its MKTileOverlayRenderer does no
+            // per-zoom rasterization over the live Apple base map. Without this
+            // the invisible (opacity 0) overlay still composites on every zoom
+            // step, which froze the Apple base map during pinch-zoom.
+            minimumZ={tileSelection === NATIVE_MAP ? 22 : 0}
             flipY={false}
             shouldReplaceMapContent={tileSelection !== NATIVE_MAP}
             opacity={tileSelection === NATIVE_MAP ? 0 : 1}
+            // Belt-and-suspenders: also keep it off the network in native mode
+            // (the nw_connection log churn) since it should never draw there.
+            offlineMode={tileSelection === NATIVE_MAP}
           />
 
           {/* Computed route legs */}
-          {paths.map((path, index) => (
-            <Polyline
-              key={"leg-" + index}
-              coordinates={legCoords(path)}
-              strokeColor="rgba(0,0,255,0.6)"
-              strokeWidth={4}
-            />
-          ))}
+          {legElements}
 
           {/* Stop markers */}
-          {stops.map((point, index) => {
-            if (!point.Entrances) return null;
-            const entrance = point.Entrances[point.selectedEntrance - 1];
-            if (!entrance) return null;
-            const label =
-              index === 0
-                ? "Start: " + point.name
-                : index === stops.length - 1
-                  ? "End: " + point.name
-                  : "Stop " + (index + 1) + ": " + point.name;
-            return (
-              <Marker
-                key={"stop-" + index}
-                coordinate={{ latitude: entrance.lat, longitude: entrance.lon }}
-                image={standardImage}
-                anchor={{ x: 0.5, y: 1 }}
-              >
-                <Callout>
-                  <Text>{label}</Text>
-                </Callout>
-              </Marker>
-            );
-          })}
+          {stopMarkers}
 
           {/* Selected entrance marker */}
           {selectedPoint && (
@@ -389,12 +468,17 @@ const MapBox: React.FC<ChildProps> = ({
               coordinate={selectedPoint}
               image={selectImage}
               anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
             />
           )}
 
           {/* Current location */}
           {currentLocation && settings.showLocation && (
-            <Marker coordinate={currentLocation} anchor={{ x: 0.5, y: 0.5 }}>
+            <Marker
+              coordinate={currentLocation}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={trackCurrent}
+            >
               <View style={styles.currentOuter}>
                 <View style={styles.currentInner} />
               </View>
@@ -402,13 +486,7 @@ const MapBox: React.FC<ChildProps> = ({
           )}
 
           {/* Off-campus dimming mask */}
-          <Polygon
-            coordinates={OUTER_RING}
-            holes={[CAMPUS_HOLE]}
-            strokeColor="#ffca09"
-            strokeWidth={2}
-            fillColor="rgba(0,0,0,0.4)"
-          />
+          {campusMask}
         </MapView>
 
         {/* Tile selector button */}

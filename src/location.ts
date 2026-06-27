@@ -44,3 +44,34 @@ export async function getCurrentPosition(): Promise<Position | null> {
     return null;
   }
 }
+
+/**
+ * Subscribe to position updates and invoke `onChange` whenever the device
+ * moves. Returns a function that stops watching.
+ *
+ * This uses a single long-lived CoreLocation subscription instead of polling
+ * `getCurrentPositionAsync` on a timer. Repeated polling forces synchronous
+ * `CLLocationManager` authorization-status checks on the main thread (the
+ * source of the "can cause UI unresponsiveness" warnings) and freezes the map;
+ * a watch subscription delivers updates asynchronously without that cost.
+ */
+export async function watchPosition(
+  onChange: (pos: Position) => void,
+): Promise<() => void> {
+  try {
+    if (!(await checkLocationPermission())) return () => {};
+    const subscription = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 2000,
+        distanceInterval: 1,
+      },
+      (loc) => {
+        onChange({ lat: loc.coords.latitude, lon: loc.coords.longitude });
+      },
+    );
+    return () => subscription.remove();
+  } catch {
+    return () => {};
+  }
+}
