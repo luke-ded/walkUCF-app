@@ -139,6 +139,17 @@ const MapBox: React.FC<ChildProps> = ({
   const [tileSelection, setTileSelection] = useState<string>(resolveInitialTile);
   const [trackCurrent, setTrackCurrent] = useState(true);
 
+  // react-native-maps applies a UrlTile's `shouldReplaceMapContent`
+  // (MKTileOverlay.canReplaceMapContent on iOS) only when it arrives as a prop
+  // *update*, not at the value it is first mounted with. On a cold start where a
+  // custom tile set is the persisted selection, the tile mounts with the flag
+  // already true, so it is never applied: MapKit keeps drawing the Apple base
+  // map, leaking its labels *and* its "Legal" attribution link through the
+  // custom tiles. We mount with the flag off and flip it on after the first
+  // commit, so canReplaceMapContent is always delivered as an update — the same
+  // path that already makes in-session tile switches work.
+  const [replaceApplied, setReplaceApplied] = useState(false);
+
   // Retrieve graph data (memoized; rebuilds only when options change).
   const data = useMemo(
     () => createGraph(buildings, jaywalking, grass, parking),
@@ -178,6 +189,13 @@ const MapBox: React.FC<ChildProps> = ({
       stop?.();
     };
   }, [settings.showLocation]);
+
+  // Deliver shouldReplaceMapContent as a post-mount prop update (see the
+  // replaceApplied note above). Runs once after the first commit; thereafter the
+  // flag tracks tileSelection normally.
+  useEffect(() => {
+    setReplaceApplied(true);
+  }, []);
 
   // Keep react-native-maps from re-rasterizing the current-location marker's
   // custom view on every frame. `tracksViewChanges` defaults to true, which
@@ -449,7 +467,7 @@ const MapBox: React.FC<ChildProps> = ({
             // step, which froze the Apple base map during pinch-zoom.
             minimumZ={tileSelection === NATIVE_MAP ? 22 : 0}
             flipY={false}
-            shouldReplaceMapContent={tileSelection !== NATIVE_MAP}
+            shouldReplaceMapContent={replaceApplied && tileSelection !== NATIVE_MAP}
             opacity={tileSelection === NATIVE_MAP ? 0 : 1}
             // Belt-and-suspenders: also keep it off the network in native mode
             // (the nw_connection log churn) since it should never draw there.
