@@ -1,0 +1,43 @@
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMap.m b/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
+index dbc85fb..2aedf4a 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
+@@ -108,13 +108,17 @@ - (void)insertReactSubview:(id<RCTComponent>)subview atIndex:(NSInteger)atIndex
+         [self addAnnotation:(id <MKAnnotation>) subview];
+     } else if ([subview isKindOfClass:[AIRMapPolyline class]]) {
+         ((AIRMapPolyline *)subview).map = self;
+-        [self addOverlay:(id<MKOverlay>)subview];
++        // Add vector overlays at aboveLabels so they render above an opaque
++        // UrlTile (which is pinned to aboveLabels by AIRMapUrlTile's update).
++        // The bare addOverlay: defaults to aboveRoads (below the tile), which
++        // hid routes/polygons created while a custom tile was already selected.
++        [self addOverlay:(id<MKOverlay>)subview level:MKOverlayLevelAboveLabels];
+     } else if ([subview isKindOfClass:[AIRMapPolygon class]]) {
+         ((AIRMapPolygon *)subview).map = self;
+-        [self addOverlay:(id<MKOverlay>)subview];
++        [self addOverlay:(id<MKOverlay>)subview level:MKOverlayLevelAboveLabels];
+     } else if ([subview isKindOfClass:[AIRMapCircle class]]) {
+         ((AIRMapCircle *)subview).map = self;
+-        [self addOverlay:(id<MKOverlay>)subview];
++        [self addOverlay:(id<MKOverlay>)subview level:MKOverlayLevelAboveLabels];
+     } else if ([subview isKindOfClass:[AIRMapUrlTile class]]) {
+         ((AIRMapUrlTile *)subview).map = self;
+         [self addOverlay:(id<MKOverlay>)subview];
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
+index f77f627..89dc1a5 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
+@@ -187,7 +187,12 @@ - (void)update
+             continue;
+         }
+         [_map removeOverlay:overlay];
+-        [_map addOverlay:overlay];
++        // Re-add non-tile overlays (polylines, polygons) explicitly at
++        // MKOverlayLevelAboveLabels. The tile above is pinned to aboveLabels;
++        // the bare addOverlay: defaults to aboveRoads (below labels), so an
++        // opaque UrlTile would paint over routes/polygons. Matching the tile's
++        // level (and re-adding after it) keeps these overlays visible.
++        [_map addOverlay:overlay level:MKOverlayLevelAboveLabels];
+     }
+ }
+ 
