@@ -1,13 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-/**
- * The web app uses the browser's synchronous `localStorage` everywhere
- * (getItem / setItem in render bodies, etc.). React Native only ships an
- * async key/value store. To keep the components as close to the web version
- * as possible, this module exposes a synchronous `localStorage`-like API
- * backed by an in-memory cache that is hydrated from AsyncStorage once on
- * startup and written through asynchronously on every change.
- */
+// Synchronous `localStorage`-like API (matching the web app) backed by an in-memory
+// cache, hydrated from AsyncStorage on startup and written through asynchronously.
 const cache: Record<string, string> = {};
 
 export const localStorage = {

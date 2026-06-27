@@ -12,13 +12,8 @@ interface ChildProps {
   topInset: number;
 }
 
-/**
- * Floating map controls that overlay the full-screen map (Apple-Maps style):
- * a compact brand pill on the upper-left and a vertical cluster of glass
- * circular buttons (theme toggle / settings / about) on the upper-right. The
- * surrounding container is `box-none` so only the buttons capture touches and
- * the rest of the map stays interactive.
- */
+// Floating map controls overlaying the map: a brand pill (upper-left) and theme/
+// settings/about buttons (upper-right). The container is `box-none` so only buttons capture touches.
 const NavBar: React.FC<ChildProps> = ({
   toggleAbout,
   about,

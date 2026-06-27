@@ -1,10 +1,7 @@
 import * as Location from "expo-location";
 
-/**
- * Wrapper around expo-location that mirrors how the web app used
- * `navigator.geolocation`. Location is supported on every native platform,
- * so `hasGeolocation` is always true here.
- */
+// Wrapper around expo-location mirroring the web app's `navigator.geolocation`;
+// location is supported on every native platform, so this is always true.
 export const hasGeolocation = true;
 
 export interface Position {
@@ -45,16 +42,8 @@ export async function getCurrentPosition(): Promise<Position | null> {
   }
 }
 
-/**
- * Subscribe to position updates and invoke `onChange` whenever the device
- * moves. Returns a function that stops watching.
- *
- * This uses a single long-lived CoreLocation subscription instead of polling
- * `getCurrentPositionAsync` on a timer. Repeated polling forces synchronous
- * `CLLocationManager` authorization-status checks on the main thread (the
- * source of the "can cause UI unresponsiveness" warnings) and freezes the map;
- * a watch subscription delivers updates asynchronously without that cost.
- */
+// Subscribe to position updates (returns an unsubscribe fn). Uses one long-lived
+// CoreLocation subscription instead of timer polling, which froze the map's main thread.
 export async function watchPosition(
   onChange: (pos: Position) => void,
 ): Promise<() => void> {

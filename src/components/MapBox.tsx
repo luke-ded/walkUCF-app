@@ -36,31 +36,23 @@ interface ChildProps {
   triggerRerender: () => void;
   toggleError: (error: boolean) => void;
   stops: Item[];
-  // Route-affecting options now live in HomePage (surfaced in the bottom
-  // sheet) and are passed down so the graph/route stay in sync.
+  // Route-affecting options, owned by HomePage and passed down.
   buildings: boolean;
   jaywalking: boolean;
   grass: boolean;
   parking: boolean;
   // Safe-area top inset so the floating map controls clear the status bar.
   topInset: number;
-  // Height (px) of the map currently hidden behind the minimized bottom sheet,
-  // so the south drag bound is relaxed enough to reveal the campus bottom above
-  // it.
+  // Map height (px) hidden behind the minimized sheet; relaxes the south drag bound.
   obscuredBottom: number;
 }
 
 const displayAllPaths = false; // Change to true to view all paths
 
-// The platform's native base map (Apple Maps on iOS, Google Maps on Android).
-// When selected the UrlTile is kept mounted but hidden (opacity 0) so the
-// underlying PROVIDER_DEFAULT map shows through.
+// Native base map (Apple/Google); the UrlTile stays mounted but hidden (opacity 0).
 const NATIVE_MAP = "Native";
 
-// Resolve the initially selected tile. Older builds defaulted to (and
-// persisted) "OSM Default"; a one-time migration moves those installs onto the
-// new native-map default so it actually takes effect. User choices made after
-// the migration are preserved.
+// Resolve the initial tile, migrating old "OSM Default" installs to the native default once.
 const TILE_DEFAULT_VERSION = "nativeDefault-v1";
 function resolveInitialTile(): string {
   if (localStorage.getItem("tileDefaultVersion") !== TILE_DEFAULT_VERSION) {
@@ -85,8 +77,7 @@ const tileSelectionOptions = new Map<string, string>([
   ],
 ]);
 
-// Friendly display names for the persisted tile keys above (keys are kept
-// stable for storage compatibility).
+// Friendly display names for the persisted tile keys (keys kept stable for storage).
 const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
   "OSM Default": "OpenStreetMap",
@@ -95,16 +86,8 @@ const tileLabels: Record<string, string> = {
   Carto: "Light",
 };
 
-// Placeholder template that keeps the (hidden) UrlTile mounted while the native
-// base map is selected; it never becomes visible (opacity 0) or fetched
-// (offlineMode + a minimumZ above the max zoom). It MUST differ from every real
-// tile URL above: on iOS react-native-maps only rebuilds the MKTileOverlay —
-// and therefore only loads tiles — when `urlTemplate` actually changes. If the
-// placeholder equalled a real URL (it used to be "OSM Default"), switching from
-// the native map to that layer left `urlTemplate` unchanged, so no overlay was
-// rebuilt and the tiles didn't appear until the next pan/zoom. The reserved
-// `.invalid` TLD guarantees this never collides with a real source (and it is
-// never actually requested anyway).
+// Placeholder URL for the hidden UrlTile in native mode; must differ from every real
+// tile URL so iOS rebuilds the overlay on switch (the .invalid TLD never collides).
 const NATIVE_PLACEHOLDER_URL = "https://tile.invalid/{z}/{x}/{y}.png";
 
 // Campus center & bounds (mirrors the web Leaflet configuration).
@@ -115,13 +98,8 @@ const CENTER: Region = {
   longitudeDelta: 0.018,
 };
 
-// iOS zoom bounds, expressed as MapKit camera-to-center distances in meters
-// (the native MKMapView.cameraZoomRange). `minCenterCoordinateDistance` is the
-// closest the camera may get (most zoomed in, ~building level);
-// `maxCenterCoordinateDistance` is the farthest (most zoomed out, ~whole
-// campus). These replace the legacy minZoomLevel/maxZoomLevel props on iOS,
-// which froze the map at the limits (see the MapView usage below). Tune these
-// two numbers to taste — they are approximate equivalents of the old 18/15.
+// iOS zoom bounds as MapKit camera-to-center distances (meters); replaces the
+// legacy minZoomLevel/maxZoomLevel props that froze the map at the limits.
 const ZOOM_RANGE = {
   minCenterCoordinateDistance: 500,
   maxCenterCoordinateDistance: 4000,
@@ -141,14 +119,10 @@ const CAMPUS_HOLE: LatLng[] = [
   { latitude: 28.61173, longitude: -81.18678 },
   { latitude: 28.59089, longitude: -81.18678 },
 ];
-// Stable reference for the Polygon `holes` prop. Building `[CAMPUS_HOLE]`
-// inline rebuilds the array every render, which makes react-native-maps
-// re-tessellate this large masking polygon on each location update — a major
-// source of stutter while panning/zooming.
+// Stable reference for the Polygon `holes` prop; an inline array re-tessellates the mask every render.
 const CAMPUS_HOLES: LatLng[][] = [CAMPUS_HOLE];
 
-// Axis-aligned bounds of the un-dimmed campus hole. The map's viewport is kept
-// inside these so the user can't pan off-campus into the dimmed region.
+// Axis-aligned bounds of the campus hole; the viewport is kept inside them.
 const CAMPUS_BOUNDS = {
   minLat: CAMPUS_HOLE[0].latitude,
   maxLat: CAMPUS_HOLE[1].latitude,
@@ -156,19 +130,14 @@ const CAMPUS_BOUNDS = {
   maxLng: CAMPUS_HOLE[2].longitude,
 };
 
-// Clamp a region's center so the *viewport edges* stay within CAMPUS_BOUNDS
-// (not just the center) — so off-campus area is never even visible. When a
-// span is larger than the bounds (zoomed so far out the hole can't fill the
-// screen) that axis is centered instead, since containment is impossible.
-// Returns null when the region is already inside, so no correction is needed.
+// Clamp a region's center so the viewport edges stay within CAMPUS_BOUNDS (centering
+// an axis when too zoomed out to contain it). Returns null when no correction is needed.
 function clampToCampus(region: Region, southMarginDeg = 0): Region | null {
   const { latitude, longitude, latitudeDelta, longitudeDelta } = region;
   const spanLat = CAMPUS_BOUNDS.maxLat - CAMPUS_BOUNDS.minLat;
   const spanLng = CAMPUS_BOUNDS.maxLng - CAMPUS_BOUNDS.minLng;
 
-  // Allow the southern edge to drop `southMarginDeg` below campus so the bottom
-  // of campus can be dragged up above the minimized bottom sheet. North stays
-  // pinned to the hole.
+  // Let the south edge drop `southMarginDeg` below campus (for the sheet); north stays pinned.
   const effMinLat = CAMPUS_BOUNDS.minLat - southMarginDeg;
   const lat =
     latitudeDelta >= spanLat + southMarginDeg
@@ -186,8 +155,7 @@ function clampToCampus(region: Region, southMarginDeg = 0): Region | null {
           CAMPUS_BOUNDS.maxLng - longitudeDelta / 2,
         );
 
-  // Ignore sub-~2m differences so the programmatic correction can't loop (a
-  // re-applied animateToRegion reports a near-identical region back).
+  // Ignore sub-~2m differences so the correction can't loop.
   const EPS = 2e-5;
   if (Math.abs(lat - latitude) < EPS && Math.abs(lng - longitude) < EPS) {
     return null;
@@ -195,13 +163,8 @@ function clampToCampus(region: Region, southMarginDeg = 0): Region | null {
   return { latitude: lat, longitude: lng, latitudeDelta, longitudeDelta };
 }
 
-// Region that MapKit's native `cameraBoundary` (iOS, via the local patch)
-// constrains the map *center* to. To keep the viewport *edges* inside the
-// campus hole, the allowed-center region is the hole shrunk by half the
-// current viewport on each axis (so center + halfViewport lands exactly on the
-// hole edge). When the viewport is larger than the hole on an axis, that axis
-// collapses to a near-zero span and the center is effectively locked — the
-// "zoomed too far out to avoid it" case. Centered on the hole's midpoint.
+// Region MapKit's native `cameraBoundary` (iOS) constrains the map center to: the
+// campus hole shrunk by half the viewport, so the viewport edges stay inside it.
 function computeBoundary(
   viewportLatDelta: number,
   viewportLngDelta: number,
@@ -211,10 +174,8 @@ function computeBoundary(
   const spanLng = CAMPUS_BOUNDS.maxLng - CAMPUS_BOUNDS.minLng;
   const TINY = 1e-4; // ~11m; keeps the region valid while effectively locking
   return {
-    // The allowed-center range extends `southMarginDeg` further south so the
-    // campus bottom can be dragged above the minimized sheet; this shifts the
-    // (symmetric) region's center south by half that and grows its span by it.
-    // North/east/west stay pinned to the hole.
+    // Extend the allowed-center range `southMarginDeg` further south (for the sheet);
+    // north/east/west stay pinned to the hole.
     latitude:
       (CAMPUS_BOUNDS.minLat + CAMPUS_BOUNDS.maxLat) / 2 - southMarginDeg / 2,
     longitude: (CAMPUS_BOUNDS.minLng + CAMPUS_BOUNDS.maxLng) / 2,
@@ -223,12 +184,8 @@ function computeBoundary(
   };
 }
 
-// The device-location dot lives in its own component, with its own location
-// subscription and state, so a position update re-renders only this marker —
-// not the whole map. Previously `currentLocation` lived in MapBox, so every
-// GPS fix (which can fire several times a second with distanceInterval:1 and
-// GPS jitter) re-rendered the entire MapView subtree; those re-renders
-// reconciling mid-gesture were the cause of the periodic pan/zoom freezes.
+// The device-location dot owns its own location subscription so a position update
+// re-renders only this marker, not the whole map (which froze pan/zoom mid-gesture).
 const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
   const [coord, setCoord] = useState<LatLng | null>(null);
   const [tracks, setTracks] = useState(true);
@@ -259,10 +216,8 @@ const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
     };
   }, [enabled]);
 
-  // Track view changes only briefly when the dot first appears so its bitmap is
-  // captured, then disable tracking; otherwise react-native-maps re-rasterizes
-  // the (shadowed, multi-view) marker every frame during pan/zoom. Position
-  // updates afterwards move the marker via its coordinate prop without tracking.
+  // Track view changes only briefly when the dot appears (to capture its bitmap),
+  // then disable so the marker isn't re-rasterized every frame during pan/zoom.
   const visible = enabled && coord != null;
   useEffect(() => {
     if (!visible) return;
@@ -286,24 +241,16 @@ const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
   );
 };
 
-// Marker icon display size. The source PNGs are 50x82; the original web app
-// drew them at height 41 / width auto (= 25x41) and anchored them at the
-// bottom-center tip (Leaflet iconAnchor [12, 41]).
+// Marker icon display size (25x41), matching the web app's rendering of the 50x82 PNGs.
 const MARKER_WIDTH = 25;
 const MARKER_HEIGHT = 41;
 
-// The web app kept the gold "selected entrance" pin stacked above every
-// standard stop pin (Leaflet zIndexOffset). Mirror that here so a selected
-// entrance that coincides with a stop is never hidden behind it.
+// Keep the selected-entrance pin stacked above standard stop pins, as the web app did.
 const STOP_Z_INDEX = 1;
 const SELECTED_Z_INDEX = 1000;
 
-// A pin rendered from a sized child <Image> rather than the Marker `image`
-// prop. react-native-maps cannot resize the `image` prop, so on iOS a 50x82
-// asset draws at ~50x82pt (roughly double the intended size); a child image
-// lets us pin the exact 25x41 the web app used. View changes are tracked only
-// until the icon bitmap is captured (onLoad, with an 800ms fallback), then
-// disabled so the marker isn't re-rasterized every frame while panning/zooming.
+// A pin rendered from a sized child <Image> (the Marker `image` prop can't resize on iOS).
+// View changes are tracked only until the icon bitmap is captured, then disabled.
 const PinMarker: React.FC<{
   coordinate: LatLng;
   source: ImageSourcePropType;
@@ -320,11 +267,8 @@ const PinMarker: React.FC<{
   return (
     <Marker
       coordinate={coordinate}
-      // `anchor` (fractional) positions the bottom-center tip on Android. iOS
-      // ignores `anchor` for custom child-view markers and instead positions
-      // by `centerOffset` (in points): the view is centered on the coordinate
-      // by default, so shift it up by half the icon height to put the tip on
-      // the point. This restores the offset the `image` prop used to apply.
+      // `anchor` positions the tip on Android; iOS uses `centerOffset` (shift up half
+      // the icon height) since it ignores `anchor` for custom child-view markers.
       anchor={{ x: 0.5, y: 1 }}
       centerOffset={{ x: 0, y: -MARKER_HEIGHT / 2 }}
       zIndex={zIndex}
@@ -355,16 +299,13 @@ const MapBox: React.FC<ChildProps> = ({
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
 
-  // Most recent viewport zoom, so the south margin can be recomputed when the
-  // obscured-bottom height changes without waiting for the next gesture.
+  // Most recent viewport zoom, so the south margin can be recomputed without a gesture.
   const lastDeltas = useRef({
     lat: CENTER.latitudeDelta,
     lng: CENTER.longitudeDelta,
   });
 
   // Convert the obscured bottom height (px) to a latitude span at a given zoom.
-  // The map fills the screen, so latitudeDelta maps to the full screen height;
-  // a small gap lifts the campus edge a touch clear of the sheet.
   const BOTTOM_DRAG_GAP = 10;
   function southMarginDeg(viewportLatDelta: number): number {
     const screenH = Dimensions.get("window").height;
@@ -378,10 +319,7 @@ const MapBox: React.FC<ChildProps> = ({
   const [tileModal, setTileModal] = useState(false);
   const [tileSelection, setTileSelection] = useState<string>(resolveInitialTile);
 
-  // The native camera boundary (iOS) tracks the current zoom so the viewport
-  // edges always stay inside the campus hole (with extra room to the south for
-  // the bottom sheet). Seeded from the initial region; refined as the real
-  // viewport deltas / obscured height come in.
+  // Native camera boundary (iOS) tracking the current zoom; seeded from the initial region.
   const [boundary, setBoundary] = useState(() =>
     computeBoundary(
       CENTER.latitudeDelta,
@@ -390,8 +328,7 @@ const MapBox: React.FC<ChildProps> = ({
     ),
   );
 
-  // Re-derive the boundary when the obscured-bottom height changes (e.g. the
-  // sheet's peek height is measured after first layout), using the last zoom.
+  // Re-derive the boundary when the obscured-bottom height changes, using the last zoom.
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     const { lat, lng } = lastDeltas.current;
@@ -399,15 +336,8 @@ const MapBox: React.FC<ChildProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [obscuredBottom]);
 
-  // react-native-maps applies a UrlTile's `shouldReplaceMapContent`
-  // (MKTileOverlay.canReplaceMapContent on iOS) only when it arrives as a prop
-  // *update*, not at the value it is first mounted with. On a cold start where a
-  // custom tile set is the persisted selection, the tile mounts with the flag
-  // already true, so it is never applied: MapKit keeps drawing the Apple base
-  // map, leaking its labels *and* its "Legal" attribution link through the
-  // custom tiles. We mount with the flag off and flip it on after the first
-  // commit, so canReplaceMapContent is always delivered as an update — the same
-  // path that already makes in-session tile switches work.
+  // `shouldReplaceMapContent` applies on iOS only as a prop update, not at mount; mount
+  // it off and flip it on after first commit so a cold-start custom tile replaces the base map.
   const [replaceApplied, setReplaceApplied] = useState(false);
 
   // Retrieve graph data (memoized; rebuilds only when options change).
@@ -418,21 +348,15 @@ const MapBox: React.FC<ChildProps> = ({
   const pointMap = data.pointMap;
   const settings: Settings = JSON.parse(localStorage.getItem("settings")!);
 
-  // The device-location watch + dot now live in <CurrentLocationMarker> so its
-  // frequent position updates don't re-render this whole component.
+  // The device-location watch + dot live in <CurrentLocationMarker> (see above).
 
-  // Deliver shouldReplaceMapContent as a post-mount prop update (see the
-  // replaceApplied note above). Runs once after the first commit; thereafter the
-  // flag tracks tileSelection normally.
+  // Deliver shouldReplaceMapContent as a post-mount prop update (see note above).
   useEffect(() => {
     setReplaceApplied(true);
   }, []);
 
-  // Custom tile layers expose no "finished loading" event, so the spinner is
-  // shown briefly whenever a non-native layer is selected and then cleared on a
-  // timer. (The native base map is instant and never shows it.) Previously the
-  // spinner was only cleared by the one-shot onMapReady, so it stayed up
-  // forever after the first tile switch.
+  // Custom tile layers have no load event, so show the spinner briefly on a timer
+  // when a non-native layer is selected (the native base map is instant).
   useEffect(() => {
     if (tileSelection === NATIVE_MAP) {
       setLoading(false);
@@ -552,10 +476,8 @@ const MapBox: React.FC<ChildProps> = ({
     const margin = southMarginDeg(region.latitudeDelta);
 
     if (Platform.OS === "ios") {
-      // iOS is held in-bounds natively (MKMapView.cameraBoundary). The boundary
-      // depends on the zoom, so recompute it from the settled viewport — but
-      // only commit when it actually changed, so a pure pan doesn't re-render
-      // the map (the bail-out keeps the same reference).
+      // iOS is held in-bounds natively; recompute the zoom-dependent boundary from the
+      // settled viewport, committing only when it changed so a pure pan doesn't re-render.
       const next = computeBoundary(
         region.latitudeDelta,
         region.longitudeDelta,
@@ -571,9 +493,8 @@ const MapBox: React.FC<ChildProps> = ({
       return;
     }
 
-    // Android has no native camera boundary, so snap the viewport back inside
-    // the campus bounds after the gesture settles. The corrected region is
-    // in-bounds, so its own settle event clamps to null and doesn't loop.
+    // Android has no native boundary, so snap the viewport back inside the campus bounds
+    // after the gesture settles (the corrected region clamps to null and doesn't loop).
     const clamped = clampToCampus(region, margin);
     if (clamped && mapRef.current) {
       mapRef.current.animateToRegion(clamped, 180);
@@ -594,10 +515,8 @@ const MapBox: React.FC<ChildProps> = ({
     return coords;
   }
 
-  // Precompute the route legs and stop markers. These depend only on the
-  // route/options, not on the device location, so memoizing them keeps the
-  // frequent location-update re-renders from rebuilding (and re-sending to
-  // native) every overlay — which otherwise stutters panning and zooming.
+  // Precompute route legs/markers; memoized since they depend only on the route, not
+  // the device location, so location updates don't rebuild every overlay (which stuttered).
   const legElements = useMemo(
     () =>
       paths.map((path, index) => (
@@ -639,9 +558,7 @@ const MapBox: React.FC<ChildProps> = ({
     [stops],
   );
 
-  // Stable element for the large off-campus dimming mask. Memoizing it (props
-  // are all module constants) means a location-update re-render never re-sends
-  // this polygon to native, avoiding any chance of re-tessellation.
+  // Stable element for the off-campus dimming mask; memoized so it's never re-sent to native.
   const campusMask = useMemo(
     () => (
       <Polygon
@@ -662,28 +579,15 @@ const MapBox: React.FC<ChildProps> = ({
         provider={PROVIDER_DEFAULT}
         style={styles.map}
         initialRegion={CENTER}
-        // Zoom bounds. On iOS the legacy minZoomLevel/maxZoomLevel props
-        // (deprecated for Apple Maps) enforce limits by re-setting the camera
-        // with animated:TRUE from JS on every region change once you pinch
-        // past a limit; that reset fights the live gesture and freezes the map
-        // — worst on older devices (react-native-maps #4961). MapKit's native
-        // cameraZoomRange clamps with no JS feedback loop. Android keeps the
-        // legacy props (backed by a non-freezing native implementation).
-        //
-        // `cameraBoundary` (iOS only, delivered via the local react-native-maps
-        // patch) natively prevents the user from dragging the viewport off
-        // campus — a hard stop with no JS snap-back. It isn't in the rnmaps
-        // types, hence the cast.
+        // Zoom bounds: iOS uses native cameraZoomRange + cameraBoundary (via local patch),
+        // since the legacy min/maxZoomLevel props freeze the map at limits; Android keeps them.
         {...(Platform.OS === "ios"
           ? ({ cameraZoomRange: ZOOM_RANGE, cameraBoundary: boundary } as object)
           : { minZoomLevel: 15, maxZoomLevel: 18 })}
         rotateEnabled={false}
         pitchEnabled={false}
         onRegionChangeComplete={handleRegionChangeComplete}
-        // On Android the custom tiles can't replace the base map, so hide it
-        // (mapType "none") to stop the native map's labels showing through.
-        // On iOS the base map stays and UrlTile's shouldReplaceMapContent
-        // handles this instead.
+        // Android can't replace the base map, so hide it (mapType "none"); iOS uses shouldReplaceMapContent.
         mapType={
           Platform.OS === "android" && tileSelection !== NATIVE_MAP
             ? "none"
@@ -691,10 +595,7 @@ const MapBox: React.FC<ChildProps> = ({
         }
         onMapReady={() => setLoading(false)}
       >
-        {/* Kept permanently mounted (even for the native base map, where
-            it's hidden via opacity) so switching options is always a prop
-            update, never a fresh mount. A fresh UrlTile mount fails to apply
-            canReplaceMapContent on iOS, leaving the native labels visible. */}
+        {/* Kept permanently mounted so a layer switch is a prop update, not a fresh mount */}
         <UrlTile
           urlTemplate={
             tileSelection === NATIVE_MAP
@@ -702,19 +603,13 @@ const MapBox: React.FC<ChildProps> = ({
               : tileSelectionOptions.get(tileSelection)!
           }
           maximumZ={19}
-          // In native-map mode the overlay stays mounted (so switching to a
-          // custom tile set is a prop update, not a remount — see note above)
-          // but is made inert: a minimumZ above the map's max zoom (18) means
-          // MapKit requests no tiles, so its MKTileOverlayRenderer does no
-          // per-zoom rasterization over the live Apple base map. Without this
-          // the invisible (opacity 0) overlay still composites on every zoom
-          // step, which froze the Apple base map during pinch-zoom.
+          // In native mode a minimumZ above the max zoom makes the mounted overlay inert,
+          // so MapKit requests no tiles (the invisible overlay otherwise froze pinch-zoom).
           minimumZ={tileSelection === NATIVE_MAP ? 22 : 0}
           flipY={false}
           shouldReplaceMapContent={replaceApplied && tileSelection !== NATIVE_MAP}
           opacity={tileSelection === NATIVE_MAP ? 0 : 1}
-          // Belt-and-suspenders: also keep it off the network in native mode
-          // (the nw_connection log churn) since it should never draw there.
+          // Also keep it off the network in native mode, where it should never draw.
           offlineMode={tileSelection === NATIVE_MAP}
         />
 
@@ -724,8 +619,7 @@ const MapBox: React.FC<ChildProps> = ({
         {/* Stop markers */}
         {stopMarkers}
 
-        {/* Selected entrance marker — kept above the standard stop pins via
-            both JSX order (rendered last) and an elevated zIndex. */}
+        {/* Selected entrance marker — kept above stop pins via JSX order and zIndex */}
         {selectedPoint && (
           <PinMarker
             coordinate={selectedPoint}
@@ -734,8 +628,7 @@ const MapBox: React.FC<ChildProps> = ({
           />
         )}
 
-        {/* Current location (self-contained: owns its location watch so
-            position updates don't re-render the rest of the map) */}
+        {/* Current location (owns its location watch to avoid re-rendering the map) */}
         <CurrentLocationMarker enabled={settings.showLocation} />
 
         {/* Off-campus dimming mask */}

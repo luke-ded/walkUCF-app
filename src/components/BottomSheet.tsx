@@ -28,17 +28,13 @@ export interface BottomSheetRef {
 interface Props {
   topInset: number;
   bottomInset: number;
-  /**
-   * Peek content (e.g. the search bar). Always visible. Rendered inside the
-   * drag area but its own touch targets (inputs/buttons) keep working because
-   * the pan responder only claims deliberate vertical drags.
-   */
+  /** Peek content (e.g. the search bar); always visible inside the drag area, but its
+   * own touch targets keep working since the pan responder only claims deliberate drags. */
   header: React.ReactNode;
   /** Body content (the scrollable list); revealed as the sheet is dragged up. */
   children: React.ReactNode;
   onIndexChange?: (index: number) => void;
-  /** Reports the measured peek (collapsed) height — i.e. how much of whatever
-   * is behind the sheet it covers when minimized. */
+  /** Reports the measured peek (collapsed) height covered when minimized. */
   onPeekHeightChange?: (height: number) => void;
 }
 
@@ -46,15 +42,8 @@ const TOP_GAP = 10; // gap between the status bar and a fully-open sheet
 const HALF_RATIO = 0.52; // visible fraction of the screen at the middle detent
 const PROJECTION = 110; // how far a fling is projected when choosing a detent
 
-/**
- * An Apple-Maps-style draggable bottom sheet implemented with only React
- * Native core (Animated + PanResponder) so it needs no native dependencies.
- *
- * The sheet is a full-height card pinned to the bottom and moved with a
- * `translateY` transform. Three detents are derived from the measured peek
- * height and the screen size; releasing a drag springs to whichever detent the
- * gesture is heading toward (distance + velocity projection).
- */
+// Draggable bottom sheet using only RN core (Animated + PanResponder). A full-height card
+// moved via `translateY`; releasing a drag springs to one of three detents by distance + velocity.
 const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
   { topInset, bottomInset, header, children, onIndexChange, onPeekHeightChange },
   ref,
@@ -131,9 +120,8 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
       didInit.current = true;
       animateTo(0);
     } else {
-      // Geometry changed later (peek height grows/shrinks, rotation, inset
-      // changes) — settle instantly on the current detent so the sheet never
-      // sticks mid-gap.
+      // Geometry changed later (peek height, rotation, insets) — settle instantly
+      // on the current detent so the sheet never sticks mid-gap.
       translateY.stopAnimation();
       translateY.setValue(snaps[indexRef.current]);
     }
@@ -193,9 +181,8 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
     >
       <View
         {...pan.panHandlers}
-        // Padding below the peek content keeps the search bar above the home
-        // indicator at the peek detent; the `14` floor gives breathing room on
-        // devices without a bottom inset.
+        // Padding below the peek content keeps the search bar above the home indicator;
+        // the `14` floor gives breathing room on devices without a bottom inset.
         style={{ paddingBottom: Math.max(bottomInset, 14) }}
         onLayout={(e: LayoutChangeEvent) =>
           setPeekH(e.nativeEvent.layout.height)

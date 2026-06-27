@@ -1,11 +1,7 @@
 import React, { createContext, useContext } from "react";
 
-/**
- * Color palette lifted from the web app's Tailwind classes. The web app
- * expresses light/dark through `dark:` variants; in React Native there is no
- * CSS cascade, so the active theme is resolved here from a `dark` boolean
- * provided via ThemeContext.
- */
+// Color palette from the web app's Tailwind classes; light/dark is resolved here
+// from a `dark` boolean (via ThemeContext) since React Native has no CSS cascade.
 export const palette = {
   gold: "#a48100", // primary in light mode
   goldBright: "#ffca09", // primary in dark mode

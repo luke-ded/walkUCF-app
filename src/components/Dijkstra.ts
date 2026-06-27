@@ -41,10 +41,7 @@ interface createResult {
 
 type GraphMap = Map<number, GraphEdge[]>;
 
-/**
- * Minimal binary min-heap, replacing the browser-oriented `js-priority-queue`
- * dependency used by the web app. Behavior matches: lowest `distance` first.
- */
+// Minimal binary min-heap (lowest `distance` first), replacing the web app's `js-priority-queue`.
 class MinHeap {
   private heap: QItem[] = [];
 
