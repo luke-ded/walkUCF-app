@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   FlatList,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -39,14 +38,10 @@ const RouteOptions: React.FC<{
     <Text style={[styles.sectionLabel, { color: theme.secondaryText }]}>
       Route options
     </Text>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.optionsRow}
-      keyboardShouldPersistTaps="handled"
-    >
+    <View style={styles.optionsGrid}>
       {OPTION_DEFS.map(({ key, label }) => {
         const on = options[key];
+        const onColor = theme.dark ? palette.textDark : palette.textLight;
         return (
           <TouchableOpacity
             key={key}
@@ -61,21 +56,18 @@ const RouteOptions: React.FC<{
           >
             <Ionicons
               name={on ? "checkmark-circle" : "ellipse-outline"}
-              size={15}
-              color={on ? (theme.dark ? palette.textDark : palette.textLight) : theme.secondaryText}
+              size={17}
+              color={on ? onColor : theme.secondaryText}
             />
             <Text
-              style={[
-                styles.optionChipText,
-                { color: on ? (theme.dark ? palette.textDark : palette.textLight) : theme.text },
-              ]}
+              style={[styles.optionChipText, { color: on ? onColor : theme.text }]}
             >
               {label}
             </Text>
           </TouchableOpacity>
         );
       })}
-    </ScrollView>
+    </View>
   </View>
 );
 
@@ -264,7 +256,6 @@ const RouteList: React.FC<ChildProps> = ({
         contentContainerStyle={[
           styles.listContent,
           { paddingBottom: bottomInset + 16 },
-          itemsList.length === 0 && styles.listContentEmpty,
         ]}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -300,21 +291,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  optionsRow: {
+  optionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     paddingHorizontal: 16,
     gap: 8,
   },
   optionChip: {
+    flexGrow: 1,
+    flexBasis: "40%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    justifyContent: "center",
+    gap: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 10,
   },
   optionChipText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
   },
   subHeader: {
@@ -335,9 +331,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flexGrow: 1,
-  },
-  listContentEmpty: {
-    justifyContent: "center",
   },
   row: {
     flexDirection: "row",
@@ -414,6 +407,7 @@ const styles = StyleSheet.create({
   empty: {
     alignItems: "center",
     paddingHorizontal: 36,
+    paddingTop: 24,
     gap: 10,
   },
   emptyTitle: {
