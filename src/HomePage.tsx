@@ -50,9 +50,11 @@ function loadRouteOptions(): RouteOptions {
   return { buildings: true, jaywalking: false, grass: false, parking: false };
 }
 
-// One-line route summary ("12 min · 0.42 mi") shown under the search bar when a
-// route exists and the user isn't actively searching.
-function routeSummary(): string | null {
+// Route summary (walk time + distance) shown under the search bar when a route
+// exists and the user isn't actively searching. Returned as parts so each value
+// can be emphasized in the header — this is the app's primary output.
+type RouteSummary = { minutes: string | null; distance: string };
+function routeSummary(): RouteSummary | null {
   try {
     const graph = JSON.parse(localStorage.getItem("graphData")!) as GraphData;
     const settings = JSON.parse(localStorage.getItem("settings")!) as SettingsType;
@@ -68,7 +70,7 @@ function routeSummary(): string | null {
             Math.round(graph.distanceMi / (settings.walkSpeed / 60)),
           ).toString()
         : null;
-    return minutes ? `${minutes} min · ${distance}` : distance;
+    return { minutes, distance };
   } catch {
     return null;
   }
@@ -251,9 +253,20 @@ function HomePage() {
       </View>
       {summary && (
         <View style={styles.summaryRow}>
-          <Ionicons name="walk" size={16} color={theme.primary} />
-          <Text style={[styles.summaryText, { color: theme.secondaryText }]}>
-            {summary}
+          <Ionicons name="walk" size={22} color={theme.primary} />
+          {summary.minutes && (
+            <>
+              <Text style={[styles.summaryTime, { color: theme.primary }]}>
+                {summary.minutes}
+                <Text style={styles.summaryUnit}> min</Text>
+              </Text>
+              <Text style={[styles.summaryDivider, { color: theme.separator }]}>
+                |
+              </Text>
+            </>
+          )}
+          <Text style={[styles.summaryDistance, { color: theme.text }]}>
+            {summary.distance}
           </Text>
         </View>
       )}
@@ -372,13 +385,27 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
     paddingTop: 12,
     paddingHorizontal: 2,
   },
-  summaryText: {
-    fontSize: 14,
+  summaryTime: {
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  summaryUnit: {
+    fontSize: 16,
     fontWeight: "600",
+  },
+  summaryDivider: {
+    fontSize: 18,
+    fontWeight: "300",
+  },
+  summaryDistance: {
+    fontSize: 22,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
 });
 

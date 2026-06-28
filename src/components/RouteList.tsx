@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   optionsBlock: {
-    paddingTop: 6,
+    paddingTop: 3,
     paddingBottom: 10,
   },
   sectionLabel: {
