@@ -550,7 +550,9 @@ const MapBox: React.FC<ChildProps> = ({
             zIndex={STOP_Z_INDEX}
           >
             <Callout>
-              <Text>{label}</Text>
+              <View style={styles.callout}>
+                <Text style={styles.calloutText}>{label}</Text>
+              </View>
             </Callout>
           </PinMarker>
         );
@@ -775,6 +777,16 @@ const styles = StyleSheet.create({
   markerIcon: {
     width: MARKER_WIDTH,
     height: MARKER_HEIGHT,
+  },
+  callout: {
+    width: 150,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  calloutText: {
+    fontSize: 14,
+    textAlign: "center",
+    flexWrap: "wrap",
   },
   controls: {
     position: "absolute",
