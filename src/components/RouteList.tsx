@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
-  FlatList,
+  Animated,
+  PanResponder,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -12,6 +14,10 @@ import { palette, permitColor, useTheme, Theme } from "../theme";
 import { Item } from "../types";
 
 export type RouteOptionKey = "buildings" | "jaywalking" | "parking" | "grass";
+
+// Fixed row height keeps the drag math simple: every slot is exactly this tall,
+// so a row's target index is just its pixel offset divided by ROW_HEIGHT.
+const ROW_HEIGHT = 64;
 
 interface ChildProps {
   triggerRerender: () => void;
@@ -81,8 +87,22 @@ const RouteList: React.FC<ChildProps> = ({
 }) => {
   const theme = useTheme();
   const [, setSelectedItem] = useState("");
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const itemsList = stops;
+
+  // Live translation of the row being dragged (relative to its home slot), plus
+  // a per-row offset that animates neighbours out of the way to open a gap.
+  const dragY = useRef(new Animated.Value(0)).current;
+  const offsets = useRef<Animated.Value[]>([]);
+  if (offsets.current.length !== itemsList.length) {
+    offsets.current = itemsList.map(() => new Animated.Value(0));
+  }
+  // Where the dragged row would land if released right now.
+  const toIndexRef = useRef(0);
+  // Latest list, so PanResponder callbacks reorder against current data.
+  const dataRef = useRef(itemsList);
+  dataRef.current = itemsList;
 
   function removeStop(item: Item) {
     const index = itemsList.indexOf(item);
@@ -102,26 +122,6 @@ const RouteList: React.FC<ChildProps> = ({
     setStops(newItemsList);
   }
 
-  function swap(index1: number, index2: number) {
-    const newItemsList = [...itemsList];
-    const temp = newItemsList[index1];
-    newItemsList[index1] = newItemsList[index2];
-    newItemsList[index2] = temp;
-    setStops(newItemsList);
-  }
-
-  function swapDown(item: Item) {
-    const index = itemsList.indexOf(item);
-    if (index < 0 || itemsList.length - 1 === index) return;
-    swap(index, index + 1);
-  }
-
-  function swapUp(item: Item) {
-    const index = itemsList.indexOf(item);
-    if (index <= 0) return;
-    swap(index - 1, index);
-  }
-
   function handleItemChange(item: Item) {
     setSelectedItem(item.key);
     localStorage.setItem("selectedPoint", JSON.stringify(item));
@@ -136,7 +136,82 @@ const RouteList: React.FC<ChildProps> = ({
     setStops([]);
   }
 
-  const renderItem = (item: Item, index: number) => {
+  // Slide neighbouring rows to make room for the dragged row at `to`.
+  function shiftNeighbours(from: number, to: number) {
+    offsets.current.forEach((off, i) => {
+      if (i === from) return;
+      let target = 0;
+      if (from < to && i > from && i <= to) target = -ROW_HEIGHT;
+      else if (from > to && i < from && i >= to) target = ROW_HEIGHT;
+      Animated.spring(off, {
+        toValue: target,
+        useNativeDriver: true,
+        bounciness: 0,
+        speed: 20,
+      }).start();
+    });
+  }
+
+  // One PanResponder per slot; rebuilt whenever the list changes so the captured
+  // index always matches the row's current position.
+  const responders = useMemo(
+    () =>
+      itemsList.map((_item, index) =>
+        PanResponder.create({
+          onStartShouldSetPanResponder: () => true,
+          onMoveShouldSetPanResponder: () => true,
+          onPanResponderGrant: () => {
+            dragY.setValue(0);
+            offsets.current.forEach((o) => o.setValue(0));
+            toIndexRef.current = index;
+            setActiveIndex(index);
+          },
+          onPanResponderMove: (_e, g) => {
+            dragY.setValue(g.dy);
+            const len = dataRef.current.length;
+            const to = Math.max(
+              0,
+              Math.min(len - 1, Math.round(index + g.dy / ROW_HEIGHT)),
+            );
+            if (to !== toIndexRef.current) {
+              toIndexRef.current = to;
+              shiftNeighbours(index, to);
+            }
+          },
+          onPanResponderRelease: () => {
+            const from = index;
+            const to = toIndexRef.current;
+            const finish = () => {
+              dragY.setValue(0);
+              offsets.current.forEach((o) => o.setValue(0));
+              setActiveIndex(null);
+              if (to !== from) {
+                const arr = [...dataRef.current];
+                const [moved] = arr.splice(from, 1);
+                arr.splice(to, 0, moved);
+                setStops(arr);
+              }
+            };
+            // Glide the dragged row into the opened gap, then commit the order.
+            Animated.spring(dragY, {
+              toValue: (to - from) * ROW_HEIGHT,
+              useNativeDriver: true,
+              bounciness: 0,
+              speed: 20,
+            }).start(finish);
+          },
+          onPanResponderTerminate: () => {
+            dragY.setValue(0);
+            offsets.current.forEach((o) => o.setValue(0));
+            setActiveIndex(null);
+          },
+        }),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itemsList],
+  );
+
+  const renderRow = (item: Item, index: number) => {
     const isCurrentLocation = item.name === "Current Location";
     const entranceLabel =
       item.selectedEntrance === -1
@@ -146,73 +221,96 @@ const RouteList: React.FC<ChildProps> = ({
           : "Door " + item.selectedEntrance;
     const first = index === 0;
     const last = index === itemsList.length - 1;
+    const active = index === activeIndex;
 
     return (
-      <TouchableOpacity
-        onPress={() => handleItemChange(item)}
-        activeOpacity={0.6}
-        style={styles.row}
+      <Animated.View
+        key={index}
+        style={[
+          styles.rowAbsolute,
+          {
+            top: index * ROW_HEIGHT,
+            backgroundColor: theme.sheetBg,
+            transform: [
+              { translateY: active ? dragY : offsets.current[index] },
+            ],
+            zIndex: active ? 10 : 0,
+          },
+          active && styles.rowActive,
+        ]}
       >
-        <View style={styles.indexColumn}>
-          <View style={[styles.indexBadge, { backgroundColor: theme.primary }]}>
-            {isCurrentLocation ? (
-              <Ionicons
-                name="navigate"
-                size={13}
-                color={theme.dark ? palette.textDark : palette.textLight}
-              />
-            ) : (
-              <Text
-                style={[
-                  styles.indexText,
-                  { color: theme.dark ? palette.textDark : palette.textLight },
-                ]}
-              >
-                {index + 1}
-              </Text>
-            )}
+        <TouchableOpacity
+          onPress={() => handleItemChange(item)}
+          activeOpacity={0.6}
+          style={styles.rowTap}
+        >
+          <View style={styles.indexColumn}>
+            <View
+              style={[styles.indexBadge, { backgroundColor: theme.primary }]}
+            >
+              {isCurrentLocation ? (
+                <Ionicons
+                  name="navigate"
+                  size={13}
+                  color={theme.dark ? palette.textDark : palette.textLight}
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.indexText,
+                    {
+                      color: theme.dark ? palette.textDark : palette.textLight,
+                    },
+                  ]}
+                >
+                  {index + 1}
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
 
-        <View style={styles.rowMain}>
-          <View style={styles.titleLine}>
-            <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-              {item.name}
-            </Text>
-            {item.permitType?.map((permit) => (
-              <View
-                key={permit}
-                style={[styles.permitChip, { backgroundColor: permitColor(permit) }]}
+          <View style={styles.rowMain}>
+            <View style={styles.titleLine}>
+              <Text
+                style={[styles.name, { color: theme.text }]}
+                numberOfLines={1}
               >
-                <Text style={styles.permitText}>{permit}</Text>
-              </View>
-            ))}
+                {item.name}
+              </Text>
+              {item.permitType?.map((permit) => (
+                <View
+                  key={permit}
+                  style={[
+                    styles.permitChip,
+                    { backgroundColor: permitColor(permit) },
+                  ]}
+                >
+                  <Text style={styles.permitText}>{permit}</Text>
+                </View>
+              ))}
+            </View>
+            <Text
+              style={[styles.meta, { color: theme.secondaryText }]}
+              numberOfLines={1}
+            >
+              {first ? "Start" : last ? "Destination" : "Stop " + (index + 1)}
+              {item.abbreviation ? "  ·  " + item.abbreviation : ""}
+              {!isCurrentLocation ? "  ·  " + entranceLabel : ""}
+            </Text>
           </View>
-          <Text style={[styles.meta, { color: theme.secondaryText }]} numberOfLines={1}>
-            {first ? "Start" : last ? "Destination" : "Stop " + (index + 1)}
-            {item.abbreviation ? "  ·  " + item.abbreviation : ""}
-            {!isCurrentLocation ? "  ·  " + entranceLabel : ""}
-          </Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.controls}>
-          <View style={styles.reorderColumn}>
-            <TouchableOpacity
-              onPress={() => swapUp(item)}
-              disabled={first}
-              hitSlop={{ top: 4, bottom: 2, left: 6, right: 6 }}
-              style={first && styles.controlDisabled}
-            >
-              <Ionicons name="chevron-up" size={18} color={theme.secondaryText} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => swapDown(item)}
-              disabled={last}
-              hitSlop={{ top: 2, bottom: 4, left: 6, right: 6 }}
-              style={last && styles.controlDisabled}
-            >
-              <Ionicons name="chevron-down" size={18} color={theme.secondaryText} />
-            </TouchableOpacity>
+          <View
+            style={styles.dragHandle}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            {...responders[index].panHandlers}
+          >
+            <Ionicons
+              name="reorder-three"
+              size={24}
+              color={theme.tertiaryText}
+            />
           </View>
           <TouchableOpacity
             style={[styles.removeButton, { backgroundColor: theme.fillBg }]}
@@ -224,7 +322,13 @@ const RouteList: React.FC<ChildProps> = ({
             <Ionicons name="close" size={16} color={theme.secondaryText} />
           </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+
+        {!last && (
+          <View
+            style={[styles.separator, { backgroundColor: theme.separator }]}
+          />
+        )}
+      </Animated.View>
     );
   };
 
@@ -241,36 +345,40 @@ const RouteList: React.FC<ChildProps> = ({
             onPress={clearList}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={[styles.clearText, { color: theme.primary }]}>Clear</Text>
+            <Text style={[styles.clearText, { color: theme.primary }]}>
+              Clear
+            </Text>
           </TouchableOpacity>
         </View>
       )}
 
-      <FlatList
-        data={itemsList}
-        keyExtractor={(_item, index) => String(index)}
-        keyboardShouldPersistTaps="handled"
-        ItemSeparatorComponent={() => (
-          <View style={[styles.separator, { backgroundColor: theme.separator }]} />
-        )}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: bottomInset + 16 },
-        ]}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="map-outline" size={34} color={theme.tertiaryText} />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>
-              No destinations yet
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: theme.secondaryText }]}>
-              Tap the search bar above to add buildings and plan the fastest walk
-              across campus.
-            </Text>
-          </View>
-        }
-        renderItem={({ item, index }) => renderItem(item, index)}
-      />
+      {itemsList.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="map-outline" size={34} color={theme.tertiaryText} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            No destinations yet
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: theme.secondaryText }]}>
+            Tap the search bar above to add buildings and plan the fastest walk
+            across campus.
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          // Lock scrolling mid-drag so the gesture moves only the grabbed row.
+          scrollEnabled={activeIndex === null}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              height: itemsList.length * ROW_HEIGHT,
+              paddingBottom: bottomInset + 16,
+            },
+          ]}
+        >
+          {itemsList.map((item, index) => renderRow(item, index))}
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -332,15 +440,33 @@ const styles = StyleSheet.create({
   listContent: {
     flexGrow: 1,
   },
-  row: {
+  rowAbsolute: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: ROW_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+  },
+  rowActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  rowTap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
   separator: {
+    position: "absolute",
+    bottom: 0,
+    left: 52,
+    right: 0,
     height: StyleSheet.hairlineWidth,
-    marginLeft: 52,
   },
   indexColumn: {
     width: 32,
@@ -381,11 +507,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  reorderColumn: {
+  dragHandle: {
+    paddingHorizontal: 2,
     alignItems: "center",
-  },
-  controlDisabled: {
-    opacity: 0.3,
+    justifyContent: "center",
   },
   removeButton: {
     height: 28,
