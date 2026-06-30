@@ -45,6 +45,8 @@ interface ChildProps {
   topInset: number;
   // Map height (px) hidden behind the minimized sheet; relaxes the south drag bound.
   obscuredBottom: number;
+  // Whether foreground location permission is granted.
+  locationGranted: boolean;
 }
 
 const displayAllPaths = false; // Change to true to view all paths
@@ -186,12 +188,15 @@ function computeBoundary(
 
 // The device-location dot owns its own location subscription so a position update
 // re-renders only this marker, not the whole map (which froze pan/zoom mid-gesture).
-const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
+const CurrentLocationMarker: React.FC<{
+  enabled: boolean;
+  permissionGranted: boolean;
+}> = ({ enabled, permissionGranted }) => {
   const [coord, setCoord] = useState<LatLng | null>(null);
   const [tracks, setTracks] = useState(true);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !permissionGranted) {
       setCoord(null);
       return;
     }
@@ -214,7 +219,7 @@ const CurrentLocationMarker: React.FC<{ enabled: boolean }> = ({ enabled }) => {
       cancelled = true;
       stop?.();
     };
-  }, [enabled]);
+  }, [enabled, permissionGranted]);
 
   // Track view changes only briefly when the dot appears (to capture its bitmap),
   // then disable so the marker isn't re-rasterized every frame during pan/zoom.
@@ -295,6 +300,7 @@ const MapBox: React.FC<ChildProps> = ({
   parking,
   topInset,
   obscuredBottom,
+  locationGranted,
 }) => {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
@@ -631,7 +637,10 @@ const MapBox: React.FC<ChildProps> = ({
         )}
 
         {/* Current location (owns its location watch to avoid re-rendering the map) */}
-        <CurrentLocationMarker enabled={settings.showLocation} />
+        <CurrentLocationMarker
+          enabled={settings.showLocation}
+          permissionGranted={locationGranted}
+        />
 
         {/* Off-campus dimming mask */}
         {campusMask}

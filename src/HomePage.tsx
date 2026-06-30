@@ -22,7 +22,7 @@ import About from "./components/About";
 import ErrorModal from "./components/Error";
 import Settings from "./components/Settings";
 import { localStorage } from "./storage";
-import { requestLocationPermission } from "./location";
+import { requestLocationPermission, checkLocationPermission } from "./location";
 import { useTheme } from "./theme";
 import { GraphData, Item, Settings as SettingsType } from "./types";
 
@@ -83,6 +83,12 @@ function HomePage() {
   const [error, toggleError] = useState(false);
   const [settings, toggleSettings] = useState(false);
   const [stops, setStops] = useState<Item[]>([]);
+
+  // Whether foreground location permission is granted.
+  const [locationGranted, setLocationGranted] = useState<boolean>(() => {
+    const stored = localStorage.getItem("permissionStatus");
+    return stored != null ? JSON.parse(stored) === true : false;
+  });
 
   // Search state lives here so the search bar (sheet header) and the body
   // (results vs. route) stay in sync, Apple-Maps style.
@@ -152,6 +158,7 @@ function HomePage() {
     try {
       const granted = await requestLocationPermission();
       localStorage.setItem("permissionStatus", JSON.stringify(granted));
+      setLocationGranted(granted);
     } catch (error) {
       console.error("Error querying permissions:", error);
     }
@@ -162,6 +169,9 @@ function HomePage() {
     if (!alreadyChecked) {
       checkGeolocationPermission();
       localStorage.setItem("permissionChecked", "true");
+    } else {
+      // Re-sync on warm launches in case permission changed in system settings.
+      checkLocationPermission().then(setLocationGranted);
     }
   }, []);
 
@@ -287,6 +297,7 @@ function HomePage() {
           parking={options.parking}
           topInset={insets.top}
           obscuredBottom={peekHeight}
+          locationGranted={locationGranted}
         />
       </View>
 
