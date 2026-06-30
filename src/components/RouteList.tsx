@@ -47,7 +47,7 @@ const RouteOptions: React.FC<{
     <View style={styles.optionsGrid}>
       {OPTION_DEFS.map(({ key, label }) => {
         const on = options[key];
-        const onColor = theme.dark ? palette.textDark : palette.textLight;
+        const onColor = theme.dark ? palette.textLight : palette.textDark;
         return (
           <TouchableOpacity
             key={key}
@@ -252,14 +252,14 @@ const RouteList: React.FC<ChildProps> = ({
                 <Ionicons
                   name="navigate"
                   size={13}
-                  color={theme.dark ? palette.textDark : palette.textLight}
+                  color={theme.dark ? palette.textLight : palette.textDark}
                 />
               ) : (
                 <Text
                   style={[
                     styles.indexText,
                     {
-                      color: theme.dark ? palette.textDark : palette.textLight,
+                      color: theme.dark ? palette.textLight : palette.textDark,
                     },
                   ]}
                 >

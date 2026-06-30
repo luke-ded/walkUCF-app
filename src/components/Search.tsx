@@ -69,7 +69,7 @@ const EntranceButton: React.FC<{
     <Text
       style={[
         styles.entranceButtonText,
-        { color: active ? (theme.dark ? palette.textDark : palette.textLight) : theme.text },
+        { color: active ? (theme.dark ? palette.textLight : palette.textDark) : theme.text },
       ]}
     >
       {label}
@@ -147,7 +147,7 @@ const ItemRenderer: React.FC<ItemProps> = ({
         <Ionicons
           name="add"
           size={22}
-          color={theme.dark ? palette.textDark : palette.textLight}
+          color={theme.dark ? palette.textLight : palette.textDark}
         />
       </TouchableOpacity>
     </View>
@@ -276,7 +276,7 @@ const Search: React.FC<ChildProps> = ({
                 <Ionicons
                   name="add"
                   size={22}
-                  color={theme.dark ? palette.textDark : palette.textLight}
+                  color={theme.dark ? palette.textLight : palette.textDark}
                 />
               </TouchableOpacity>
             </View>
