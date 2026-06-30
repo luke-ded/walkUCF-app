@@ -481,6 +481,23 @@ const MapBox: React.FC<ChildProps> = ({
     setSelectedPoint(null);
   }
 
+  // MapKit aspect-fits `initialRegion` to the view, so the real rendered deltas differ
+  // from CENTER's; and onRegionChangeComplete doesn't fire on cold mount (iOS). Seed the
+  // boundary from the actual viewport on map-ready so panning isn't locked until first gesture.
+  async function recomputeBoundaryFromMap() {
+    if (Platform.OS !== "ios" || !mapRef.current) return;
+    try {
+      const b = await mapRef.current.getMapBoundaries();
+      const latDelta = b.northEast.latitude - b.southWest.latitude;
+      const lngDelta = b.northEast.longitude - b.southWest.longitude;
+      lastDeltas.current = { lat: latDelta, lng: lngDelta };
+      setBoundary(computeBoundary(latDelta, lngDelta, southMarginDeg(latDelta)));
+    } catch {
+      // getMapBoundaries can reject before the surface is laid out; the first
+      // gesture's onRegionChangeComplete will still seed the boundary correctly.
+    }
+  }
+
   function handleRegionChangeComplete(region: Region) {
     lastDeltas.current = {
       lat: region.latitudeDelta,
@@ -608,7 +625,10 @@ const MapBox: React.FC<ChildProps> = ({
             ? "none"
             : "standard"
         }
-        onMapReady={() => setLoading(false)}
+        onMapReady={() => {
+          setLoading(false);
+          recomputeBoundaryFromMap();
+        }}
       >
         {/* Kept permanently mounted so a layer switch is a prop update, not a fresh mount */}
         <UrlTile
