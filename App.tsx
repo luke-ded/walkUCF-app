@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import HomePage from "./src/HomePage";
 import { hydrateStorage } from "./src/storage";
@@ -24,7 +24,10 @@ export default function App() {
     return (
       <View style={[styles.loader, { backgroundColor: themeValue.theme.screenBg }]}>
         <StatusBar style={dark ? "light" : "dark"} />
-        <ActivityIndicator size="large" color={themeValue.theme.primary} />
+        <Text style={styles.wordmark}>
+          <Text style={{ color: "#ffffff" }}>walk</Text>
+          <Text style={{ color: themeValue.theme.primary }}>UCF</Text>
+        </Text>
       </View>
     );
   }
@@ -42,5 +45,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  wordmark: {
+    fontSize: 40,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
 });

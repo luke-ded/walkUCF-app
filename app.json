@@ -4,13 +4,13 @@
     "slug": "walkucf",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "walkucf",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#141414"
     },
     "ios": {
       "supportsTablet": true,
@@ -26,8 +26,8 @@
         "ACCESS_COARSE_LOCATION"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#141414"
       }
     },
     "plugins": [
