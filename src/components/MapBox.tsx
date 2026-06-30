@@ -65,6 +65,13 @@ function resolveInitialTile(): string {
   return localStorage.getItem("tile") ?? NATIVE_MAP;
 }
 
+// Stadia Maps requires an API key for non-browser (mobile) requests; appended as a
+// query param. Set EXPO_PUBLIC_STADIA_API_KEY in .env (see .env.example).
+const STADIA_API_KEY = process.env.EXPO_PUBLIC_STADIA_API_KEY ?? "";
+const STADIA_TILE_URL =
+  "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png" +
+  (STADIA_API_KEY ? `?api_key=${STADIA_API_KEY}` : "");
+
 const tileSelectionOptions = new Map<string, string>([
   [NATIVE_MAP, ""],
   ["OSM Default", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
@@ -72,7 +79,7 @@ const tileSelectionOptions = new Map<string, string>([
     "ERSI Satellite",
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   ],
-  ["Stadia", "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png"],
+  ["Stadia", STADIA_TILE_URL],
   [
     "Carto",
     "https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}.png",
