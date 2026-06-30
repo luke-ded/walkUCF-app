@@ -47,8 +47,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   wordmark: {
-    fontSize: 40,
-    fontWeight: "800",
+    fontSize: 46,
+    fontWeight: "700",
     letterSpacing: 0.5,
+    transform: [{ translateY: -16 }],
   },
 });
