@@ -62,10 +62,24 @@ index dbc85fb..9c7fa93 100644
  // and check if their selector is available before calling super method.
  
 diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
-index f3f2513..5c049cd 100644
+index f3f2513..894a9d0 100644
 --- a/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
 +++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
-@@ -111,6 +111,7 @@ - (UIView *)view
+@@ -57,7 +57,12 @@ - (UIView *)view
+     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapTap:)];
+     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapDoubleTap:)];
+     [doubleTap setNumberOfTapsRequired:2];
+-    [tap requireGestureRecognizerToFail:doubleTap];
++    // Intentionally NOT requiring doubleTap to fail before the single tap: that
++    // dependency delayed onPress by UIKit's ~300ms double-tap timeout, which was a
++    // very noticeable lag before the bottom sheet collapsed on a map tap. The
++    // doubleTap recognizer here only drives the (unused) onDoublePress event;
++    // MapKit's own double-tap-to-zoom is a separate internal recognizer and is
++    // unaffected, so removing this just lets a single tap register immediately.
+     
+     UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapLongPress:)];
+     UIPanGestureRecognizer *drag = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapDrag:)];
+@@ -111,6 +116,7 @@ - (UIView *)view
  RCT_EXPORT_VIEW_PROPERTY(mapPadding, UIEdgeInsets)
  RCT_EXPORT_VIEW_PROPERTY(mapType, MKMapType)
  RCT_EXPORT_VIEW_PROPERTY(cameraZoomRange, NSDictionary)
