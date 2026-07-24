@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -10,7 +11,7 @@ import {
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { localStorage } from "../storage";
 import { hasGeolocation } from "../location";
-import { useTheme } from "../theme";
+import { palette, useTheme } from "../theme";
 import { Settings as SettingsType } from "../types";
 
 interface ChildProps {
@@ -94,32 +95,58 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
     leftActive: boolean;
     onLeft: () => void;
     onRight: () => void;
-  }> = ({ leftLabel, rightLabel, leftActive, onLeft, onRight }) => (
-    <View style={[styles.toggle, { borderColor: theme.primary, backgroundColor: theme.inputBg }]}>
-      <TouchableOpacity
-        style={[
-          styles.toggleHalf,
-          { borderRightColor: theme.primary, borderRightWidth: 2 },
-          leftActive && styles.toggleActive,
-        ]}
-        onPress={onLeft}
-      >
-        <Text style={{ color: theme.text }}>{leftLabel}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.toggleHalf, !leftActive && styles.toggleActive]}
-        onPress={onRight}
-      >
-        <Text style={{ color: theme.text }}>{rightLabel}</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  }> = ({ leftLabel, rightLabel, leftActive, onLeft, onRight }) => {
+    const activeText = theme.dark ? palette.textLight : palette.textDark;
+    return (
+      <View style={[styles.toggle, { backgroundColor: theme.fillBg }]}>
+        <TouchableOpacity
+          style={[
+            styles.toggleHalf,
+            leftActive && { backgroundColor: theme.primary },
+          ]}
+          onPress={onLeft}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              { color: leftActive ? activeText : theme.text },
+            ]}
+          >
+            {leftLabel}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.toggleHalf,
+            !leftActive && { backgroundColor: theme.primary },
+          ]}
+          onPress={onRight}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              { color: !leftActive ? activeText : theme.text },
+            ]}
+          >
+            {rightLabel}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={cancel}>
       <View style={[styles.backdrop, { backgroundColor: theme.overlay }]}>
-        <View style={[styles.card, { borderColor: theme.primary, backgroundColor: theme.panelSolid }]}>
-          <View style={[styles.cardHeader, { borderBottomColor: theme.primary }]}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.cardBg, borderColor: theme.controlBorder },
+          ]}
+        >
+          <View style={[styles.cardHeader, { borderBottomColor: theme.separator }]}>
             <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
           </View>
           <View style={styles.cardBody}>
@@ -137,7 +164,7 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
             <View style={styles.settingRow}>
               <Text style={[styles.settingLabel, { color: theme.text }]}>Walking Speed:</Text>
               <TextInput
-                style={[styles.speedInput, { borderColor: theme.primary, backgroundColor: theme.inputBg, color: theme.text }]}
+                style={[styles.speedInput, { backgroundColor: theme.fillBg, color: theme.text }]}
                 placeholder="3.0"
                 placeholderTextColor={theme.subText}
                 keyboardType="decimal-pad"
@@ -153,15 +180,15 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
             </View>
 
             {info && (
-              <View style={[styles.infoBox, { borderColor: theme.primary, backgroundColor: theme.panelSolid }]}>
-                <Text style={[styles.infoText, { color: theme.text }]}>
+              <View style={[styles.infoBox, { backgroundColor: theme.fillBg }]}>
+                <Text style={[styles.infoText, { color: theme.secondaryText }]}>
                   If you wear a smartwatch, check your health app for the most
                   accurate measure of this stat. Otherwise, calculate it yourself
                   or leave the default setting of{" "}
                   {units === "imperial" ? "3.0 mi/hr" : "4.8 km/hr"}.
                 </Text>
                 <TouchableOpacity onPress={() => setInfo(false)}>
-                  <Ionicons name="close" size={16} color={theme.text} />
+                  <Ionicons name="close" size={16} color={theme.secondaryText} />
                 </TouchableOpacity>
               </View>
             )}
@@ -180,11 +207,28 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
             )}
           </View>
           <View style={styles.cardFooter}>
-            <TouchableOpacity style={[styles.footerButton, { borderColor: theme.primary, backgroundColor: theme.inputBg }]} onPress={save}>
-              <Text style={{ color: theme.text }}>Save</Text>
+            <TouchableOpacity
+              style={[styles.footerButton, { backgroundColor: theme.fillBg }]}
+              onPress={cancel}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.footerButtonText, { color: theme.text }]}>
+                Cancel
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.footerButton, { borderColor: theme.primary, backgroundColor: theme.inputBg }]} onPress={cancel}>
-              <Text style={{ color: theme.text }}>Cancel</Text>
+            <TouchableOpacity
+              style={[styles.footerButton, { backgroundColor: theme.primary }]}
+              onPress={save}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.footerButtonText,
+                  { color: theme.dark ? palette.textLight : palette.textDark },
+                ]}
+              >
+                Save
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -192,6 +236,17 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
     </Modal>
   );
 };
+
+const SHADOW = Platform.select({
+  ios: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+  },
+  android: { elevation: 16 },
+  default: {},
+});
 
 const styles = StyleSheet.create({
   backdrop: {
@@ -203,21 +258,24 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     maxWidth: 420,
-    borderWidth: 2,
-    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
     overflow: "hidden",
+    ...SHADOW,
   },
   cardHeader: {
     alignItems: "center",
-    borderBottomWidth: 2,
-    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingTop: 18,
+    paddingBottom: 14,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
   },
   cardBody: {
     padding: 20,
+    paddingTop: 12,
   },
   settingRow: {
     flexDirection: "row",
@@ -227,63 +285,69 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   settingLabel: {
-    fontSize: 18,
-    marginRight: 8,
+    fontSize: 16,
+    fontWeight: "600",
+    marginRight: 10,
   },
   toggle: {
     flexDirection: "row",
-    height: 40,
+    height: 36,
     width: 152,
-    borderWidth: 2,
-    borderRadius: 12,
-    overflow: "hidden",
+    borderRadius: 10,
+    padding: 2,
+    gap: 2,
   },
   toggleHalf: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 8,
   },
-  toggleActive: {
-    backgroundColor: "rgba(255,230,140,0.35)",
+  toggleText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   speedInput: {
     width: 64,
     height: 40,
-    borderWidth: 2,
-    borderRadius: 8,
+    borderRadius: 10,
     textAlign: "center",
     fontSize: 17,
+    fontWeight: "600",
   },
   unitLabel: {
     marginLeft: 8,
-    fontSize: 16,
+    fontSize: 15,
   },
   infoBox: {
     flexDirection: "row",
     alignItems: "flex-start",
-    borderWidth: 2,
-    borderRadius: 8,
-    padding: 8,
+    borderRadius: 12,
+    padding: 12,
     marginBottom: 8,
-    gap: 6,
+    gap: 8,
   },
   infoText: {
     flex: 1,
     fontSize: 13,
+    lineHeight: 18,
   },
   cardFooter: {
     flexDirection: "row",
-    justifyContent: "center",
+    paddingHorizontal: 20,
     paddingBottom: 20,
     gap: 12,
   },
   footerButton: {
-    height: 40,
-    paddingHorizontal: 14,
-    borderWidth: 2,
+    flex: 1,
+    height: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+  },
+  footerButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 

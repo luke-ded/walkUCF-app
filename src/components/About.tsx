@@ -2,12 +2,13 @@ import React from "react";
 import {
   Linking,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { useTheme } from "../theme";
+import { palette, useTheme } from "../theme";
 
 interface ChildProps {
   toggleAbout: (about: boolean) => void;
@@ -35,8 +36,13 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
   return (
     <Modal visible transparent animationType="fade" onRequestClose={close}>
       <View style={[styles.backdrop, { backgroundColor: theme.overlay }]}>
-        <View style={[styles.card, { borderColor: theme.primary, backgroundColor: theme.panelSolid }]}>
-          <View style={[styles.cardHeader, { borderBottomColor: theme.primary }]}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.cardBg, borderColor: theme.controlBorder },
+          ]}
+        >
+          <View style={[styles.cardHeader, { borderBottomColor: theme.separator }]}>
             <Text style={[styles.title, { color: theme.text }]}>
               About This Project
             </Text>
@@ -66,10 +72,18 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
           </View>
           <View style={styles.cardFooter}>
             <TouchableOpacity
-              style={[styles.button, { borderColor: theme.primary, backgroundColor: theme.inputBg }]}
+              style={[styles.button, { backgroundColor: theme.primary }]}
               onPress={close}
+              activeOpacity={0.8}
             >
-              <Text style={{ color: theme.text }}>Close</Text>
+              <Text
+                style={[
+                  styles.buttonText,
+                  { color: theme.dark ? palette.textLight : palette.textDark },
+                ]}
+              >
+                Close
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -77,6 +91,17 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
     </Modal>
   );
 };
+
+const SHADOW = Platform.select({
+  ios: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+  },
+  android: { elevation: 16 },
+  default: {},
+});
 
 const styles = StyleSheet.create({
   backdrop: {
@@ -88,45 +113,51 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     maxWidth: 420,
-    borderWidth: 2,
-    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
     overflow: "hidden",
+    ...SHADOW,
   },
   cardHeader: {
     alignItems: "center",
-    borderBottomWidth: 2,
-    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingTop: 18,
+    paddingBottom: 14,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
   },
   cardBody: {
     padding: 20,
+    paddingTop: 8,
     alignItems: "center",
   },
   paragraph: {
     textAlign: "center",
     marginTop: 12,
     fontSize: 15,
+    lineHeight: 21,
   },
   bold: {
     fontWeight: "700",
   },
   link: {
-    fontWeight: "700",
+    fontWeight: "600",
   },
   cardFooter: {
-    alignItems: "center",
+    paddingHorizontal: 20,
     paddingBottom: 20,
   },
   button: {
-    height: 40,
-    paddingHorizontal: 14,
-    borderWidth: 2,
+    height: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 
