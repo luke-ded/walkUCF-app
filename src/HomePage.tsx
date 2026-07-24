@@ -210,6 +210,17 @@ function HomePage() {
     sheetRef.current?.half();
   }
 
+  // Tapping an empty area of the map collapses the sheet to its peek detent,
+  // clearing any active search so the keyboard doesn't linger over the map.
+  function collapseSheet() {
+    if (searchActive) {
+      setSearchTerm("");
+      setFocused(false);
+      Keyboard.dismiss();
+    }
+    sheetRef.current?.collapse();
+  }
+
   // After a stop is added, return to the route so the change is visible.
   function onStopAdded() {
     setSearchTerm("");
@@ -298,6 +309,7 @@ function HomePage() {
           topInset={insets.top}
           obscuredBottom={peekHeight}
           locationGranted={locationGranted}
+          onMapPress={collapseSheet}
         />
       </View>
 

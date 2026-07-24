@@ -47,6 +47,8 @@ interface ChildProps {
   obscuredBottom: number;
   // Whether foreground location permission is granted.
   locationGranted: boolean;
+  // Tapping an empty area of the map (e.g. to collapse the bottom sheet).
+  onMapPress?: () => void;
 }
 
 const displayAllPaths = false; // Change to true to view all paths
@@ -308,6 +310,7 @@ const MapBox: React.FC<ChildProps> = ({
   topInset,
   obscuredBottom,
   locationGranted,
+  onMapPress,
 }) => {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
@@ -618,6 +621,7 @@ const MapBox: React.FC<ChildProps> = ({
           : { minZoomLevel: 15, maxZoomLevel: 18 })}
         rotateEnabled={false}
         pitchEnabled={false}
+        onPress={onMapPress}
         onRegionChangeComplete={handleRegionChangeComplete}
         // Android can't replace the base map, so hide it (mapType "none"); iOS uses shouldReplaceMapContent.
         mapType={
