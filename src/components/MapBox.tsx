@@ -113,7 +113,7 @@ const CENTER: Region = {
 // legacy minZoomLevel/maxZoomLevel props that froze the map at the limits.
 const ZOOM_RANGE = {
   minCenterCoordinateDistance: 500,
-  maxCenterCoordinateDistance: 4000,
+  maxCenterCoordinateDistance: 8300,
   animated: false,
 };
 
