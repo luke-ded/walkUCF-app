@@ -2,7 +2,6 @@ import React from "react";
 import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { palette, useTheme, useThemeControls } from "../theme";
-import logo from "../assets/logo.png";
 
 interface ChildProps {
   toggleAbout: (about: boolean) => void;
@@ -65,7 +64,6 @@ const NavBar: React.FC<ChildProps> = ({
           { backgroundColor: theme.controlBg, borderColor: theme.controlBorder },
         ]}
       >
-        <Image source={logo} style={styles.logo} resizeMode="contain" />
         <Text style={[styles.brandText, { color: theme.text }]}>
           walk<Text style={{ color: theme.primary }}>UCF</Text>
         </Text>
@@ -130,7 +128,6 @@ const styles = StyleSheet.create({
     width: 24,
   },
   brandText: {
-    marginLeft: 8,
     fontSize: 18,
     fontWeight: "700",
     letterSpacing: 0.2,
