@@ -60,11 +60,16 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
             </Text>
             <Text style={[styles.paragraph, { color: theme.text }]}>
               Find the code for this project{" "}
-              <Link url="https://github.com/luke-ded/walkUCF">here</Link>.
+              <Link url="https://github.com/luke-ded/walkUCF-app">here</Link>.
             </Text>
             <Text style={[styles.paragraph, { color: theme.text }]}>
               Report bugs, issues, or missing map elements{" "}
-              <Link url="https://forms.gle/XmwzZMkAw9f15xzs6">here</Link>.
+              <Link url="https://forms.gle/XmwzZMkAw9f15xzs6">here</Link>
+              {" "}or reach out to support@walkucf.com.
+            </Text>
+            <Text style={[styles.paragraph, { color: theme.text }]}>
+              Read the privacy policy{" "}
+              <Link url="https://walkucf.com/privacy">here</Link>.
             </Text>
             <Text style={[styles.paragraph, { color: theme.text }]}>
               Thanks for using <Text style={styles.bold}>walkUCF</Text>!
