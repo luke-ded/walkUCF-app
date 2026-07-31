@@ -35,6 +35,20 @@ const OPTION_DEFS: { key: RouteOptionKey; label: string }[] = [
   { key: "grass", label: "Grass" },
 ];
 
+// Laid out as explicit rows of two rather than a `flexWrap` grid: Yoga caches a
+// wrap container's line layout, so on an orientation change the chips kept the
+// previous width until something re-rendered them (e.g. a tap). Rows of plain
+// `flex: 1` children re-measure with the sheet.
+const OPTIONS_PER_ROW = 2;
+const OPTION_ROWS = OPTION_DEFS.reduce<(typeof OPTION_DEFS)[]>(
+  (rows, def, i) => {
+    if (i % OPTIONS_PER_ROW === 0) rows.push([]);
+    rows[rows.length - 1].push(def);
+    return rows;
+  },
+  [],
+);
+
 const RouteOptions: React.FC<{
   theme: Theme;
   options: Record<RouteOptionKey, boolean>;
@@ -45,34 +59,52 @@ const RouteOptions: React.FC<{
       Route options
     </Text>
     <View style={styles.optionsGrid}>
-      {OPTION_DEFS.map(({ key, label }) => {
-        const on = options[key];
-        const onColor = theme.dark ? palette.textLight : palette.textDark;
-        return (
-          <TouchableOpacity
-            key={key}
-            onPress={() => onToggle(key)}
-            activeOpacity={0.7}
-            style={[
-              styles.optionChip,
-              on
-                ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                : { backgroundColor: theme.fillBg, borderColor: theme.fillBg },
-            ]}
-          >
-            <Ionicons
-              name={on ? "checkmark-circle" : "ellipse-outline"}
-              size={17}
-              color={on ? onColor : theme.secondaryText}
-            />
-            <Text
-              style={[styles.optionChipText, { color: on ? onColor : theme.text }]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+      {OPTION_ROWS.map((row, rowIndex) => (
+        <View key={rowIndex} style={styles.optionsRow}>
+          {row.map(({ key, label }) => {
+            const on = options[key];
+            const onColor = theme.dark ? palette.textLight : palette.textDark;
+            return (
+              <TouchableOpacity
+                key={key}
+                onPress={() => onToggle(key)}
+                activeOpacity={0.7}
+                style={[
+                  styles.optionChip,
+                  on
+                    ? {
+                        backgroundColor: theme.primary,
+                        borderColor: theme.primary,
+                      }
+                    : {
+                        backgroundColor: theme.fillBg,
+                        borderColor: theme.fillBg,
+                      },
+                ]}
+              >
+                <Ionicons
+                  name={on ? "checkmark-circle" : "ellipse-outline"}
+                  size={17}
+                  color={on ? onColor : theme.secondaryText}
+                />
+                <Text
+                  style={[
+                    styles.optionChipText,
+                    { color: on ? onColor : theme.text },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          {/* Keeps a trailing odd chip at the same width as the rest. */}
+          {row.length < OPTIONS_PER_ROW &&
+            Array.from({ length: OPTIONS_PER_ROW - row.length }, (_, i) => (
+              <View key={`filler-${i}`} style={styles.optionFiller} />
+            ))}
+        </View>
+      ))}
     </View>
   </View>
 );
@@ -400,14 +432,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   optionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     paddingHorizontal: 16,
     gap: 8,
   },
+  optionsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  optionFiller: {
+    flex: 1,
+  },
   optionChip: {
-    flexGrow: 1,
-    flexBasis: "40%",
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
