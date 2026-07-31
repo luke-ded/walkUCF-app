@@ -11,10 +11,12 @@ import React, {
 } from "react";
 import {
   Animated,
+  GestureResponderEvent,
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
   PanResponder,
+  PanResponderGestureState,
   StyleSheet,
   View,
 } from "react-native";
@@ -101,18 +103,20 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
   const [scrollEnabled, setScrollEnabled] = useState(false);
 
   const sheetTop = topInset + TOP_GAP;
+  // The sheet is anchored to the bottom of a full-screen root, so this is the window
+  // height — used to place touches relative to the bottom edge.
+  const winH = fullHeight + sheetTop;
 
   // Visible height of each detent, expressed as a translateY offset from the
   // fully-open position (index 0 = peek, 1 = half, 2 = full).
   const snaps = useMemo(() => {
-    const winH = fullHeight + sheetTop;
     const peekTranslate = Math.max(fullHeight - peekH, 0);
     const halfTranslate = Math.min(
       Math.max(fullHeight - winH * HALF_RATIO, 0),
       peekTranslate,
     );
     return [peekTranslate, halfTranslate, 0];
-  }, [fullHeight, peekH, sheetTop]);
+  }, [fullHeight, peekH, winH]);
 
   const animateTo = useCallback(
     (index: number, velocity = 0) => {
@@ -167,7 +171,14 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
     // That makes it an ancestor of the body's list, and RN consults ancestors on every
     // move — so the same test has to run in both phases: capture, to take a drag away
     // from the list, and bubble, for everything outside it.
-    const claim = (g: { dx: number; dy: number }) => {
+
+    // Top of the strip the system's swipe-up-to-home gesture owns. iOS keeps
+    // delivering those touches until it recognises the gesture and cancels them, so a
+    // swipe home would otherwise carry the sheet up for a few frames and then snap it
+    // back. Devices without a home indicator report no bottom inset, so no dead zone.
+    const homeEdgeTop = winH - bottomInset;
+
+    const claim = (e: GestureResponderEvent, g: PanResponderGestureState) => {
       // An inner gesture (row reordering) already owns this touch.
       if (dragLock.current) return false;
       // Deliberate vertical drags only, so taps still focus the search field and
@@ -175,14 +186,18 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
       const vertical =
         Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 1.2;
       if (!vertical) return false;
+      // Leave an upward drag that began on the home indicator to the system. Where
+      // the finger went down is this move's position less how far it has travelled.
+      const touchStartY = e.nativeEvent.pageY - g.dy;
+      if (bottomInset > 0 && g.dy < 0 && touchStartY >= homeEdgeTop) return false;
       // Below the full detent the body can't scroll, so every drag is the sheet's.
       if (indexRef.current < snaps.length - 1) return true;
       // Fully open: the list scrolls, and only a pull-down from its top collapses.
       return g.dy > 0 && scrollY.current <= 1;
     };
     return PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_e, g) => claim(g),
-      onMoveShouldSetPanResponder: (_e, g) => claim(g),
+      onMoveShouldSetPanResponderCapture: claim,
+      onMoveShouldSetPanResponder: claim,
       // Once the sheet owns the drag it keeps it; otherwise a list underneath could
       // take it back halfway through the movement.
       onPanResponderTerminationRequest: () => false,
@@ -218,7 +233,7 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
       // the sheet doesn't stay parked mid-gap with scrolling still frozen.
       onPanResponderTerminate: () => animateTo(indexRef.current),
     });
-  }, [snaps, animateTo, translateY]);
+  }, [snaps, animateTo, translateY, winH, bottomInset]);
 
   const setDragLock = useCallback((locked: boolean) => {
     dragLock.current = locked;
