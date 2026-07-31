@@ -55,7 +55,7 @@ export interface Theme {
   secondaryText: string; // Apple "secondary label"
   tertiaryText: string; // Apple "tertiary label"
   separator: string; // hairline row separators
-  controlBg: string; // floating circular map buttons
+  controlBg: string; // floating circular map buttons (opaque; see buildTheme)
   controlBorder: string; // hairline border on floating controls / cards
   fillBg: string; // secondary fill (inactive chips, segmented controls)
   cardBg: string; // popover / modal card surface
@@ -83,7 +83,7 @@ export function buildTheme(dark: boolean): Theme {
     secondaryText: dark ? "rgba(235,235,245,0.6)" : "rgba(60,60,67,0.6)",
     tertiaryText: dark ? "rgba(235,235,245,0.3)" : "rgba(60,60,67,0.3)",
     separator: dark ? "rgba(84,84,88,0.6)" : "rgba(60,60,67,0.18)",
-    controlBg: dark ? "rgba(28,28,30,0.92)" : "rgba(255,255,255,0.95)",
+    controlBg: dark ? "#1c1c1e" : "#ffffff",
     controlBorder: dark ? "rgba(84,84,88,0.5)" : "rgba(0,0,0,0.06)",
     fillBg: dark ? "#2c2c2e" : "#eff0f4",
     cardBg: dark ? "#1c1c1e" : "#ffffff",
