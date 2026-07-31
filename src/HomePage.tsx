@@ -20,6 +20,7 @@ import BottomSheet, { BottomSheetRef } from "./components/BottomSheet";
 import About from "./components/About";
 import ErrorModal from "./components/Error";
 import Settings from "./components/Settings";
+import Welcome from "./components/Welcome";
 import { localStorage } from "./storage";
 import { requestLocationPermission, checkLocationPermission } from "./location";
 import { useTheme } from "./theme";
@@ -82,6 +83,11 @@ function HomePage() {
   const [error, toggleError] = useState(false);
   const [settings, toggleSettings] = useState(false);
   const [stops, setStops] = useState<Item[]>([]);
+
+  // First launch after install: nothing has written `welcomeSeen` yet.
+  const [welcome, setWelcome] = useState<boolean>(
+    () => localStorage.getItem("welcomeSeen") == null,
+  );
 
   // Whether foreground location permission is granted.
   const [locationGranted, setLocationGranted] = useState<boolean>(() => {
@@ -163,7 +169,15 @@ function HomePage() {
     }
   }
 
+  function dismissWelcome() {
+    localStorage.setItem("welcomeSeen", "true");
+    setWelcome(false);
+  }
+
+  // Held until the welcome card is dismissed so the system location prompt
+  // doesn't appear on top of it on a fresh install.
   useEffect(() => {
+    if (welcome) return;
     const alreadyChecked = localStorage.getItem("permissionChecked");
     if (!alreadyChecked) {
       checkGeolocationPermission();
@@ -172,7 +186,7 @@ function HomePage() {
       // Re-sync on warm launches in case permission changed in system settings.
       checkLocationPermission().then(setLocationGranted);
     }
-  }, []);
+  }, [welcome]);
 
   // Track the keyboard so the results list can keep its last rows reachable.
   useEffect(() => {
@@ -392,6 +406,7 @@ function HomePage() {
         </SafeAreaView>
       </View>
 
+      {welcome && <Welcome onDismiss={dismissWelcome} />}
       {about && <About toggleAbout={toggleAbout} />}
       {error && <ErrorModal toggleError={toggleError} />}
       {settings && (
