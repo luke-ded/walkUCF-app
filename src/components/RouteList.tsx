@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { localStorage } from "../storage";
 import { palette, permitColor, useTheme, Theme } from "../theme";
+import { useBottomSheetBody } from "./BottomSheet";
 import { Item } from "../types";
 
 export type RouteOptionKey = "buildings" | "jaywalking" | "parking" | "grass";
@@ -120,6 +121,9 @@ const RouteList: React.FC<ChildProps> = ({
   const theme = useTheme();
   const [, setSelectedItem] = useState("");
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // Scrolling is handed to the sheet unless it's fully open, and a row drag has to
+  // hold the sheet off so the gesture isn't stolen mid-reorder (see BottomSheet).
+  const { scrollProps, setDragLock } = useBottomSheetBody();
 
   const itemsList = stops;
 
@@ -193,6 +197,7 @@ const RouteList: React.FC<ChildProps> = ({
           onStartShouldSetPanResponder: () => true,
           onMoveShouldSetPanResponder: () => true,
           onPanResponderGrant: () => {
+            setDragLock(true);
             dragY.setValue(0);
             offsets.current.forEach((o) => o.setValue(0));
             toIndexRef.current = index;
@@ -211,6 +216,7 @@ const RouteList: React.FC<ChildProps> = ({
             }
           },
           onPanResponderRelease: () => {
+            setDragLock(false);
             const from = index;
             const to = toIndexRef.current;
             const finish = () => {
@@ -233,6 +239,7 @@ const RouteList: React.FC<ChildProps> = ({
             }).start(finish);
           },
           onPanResponderTerminate: () => {
+            setDragLock(false);
             dragY.setValue(0);
             offsets.current.forEach((o) => o.setValue(0));
             setActiveIndex(null);
@@ -397,8 +404,9 @@ const RouteList: React.FC<ChildProps> = ({
         </View>
       ) : (
         <ScrollView
+          {...scrollProps}
           // Lock scrolling mid-drag so the gesture moves only the grabbed row.
-          scrollEnabled={activeIndex === null}
+          scrollEnabled={scrollProps.scrollEnabled && activeIndex === null}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.listContent,

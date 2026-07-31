@@ -12,6 +12,7 @@ import { nearestPoint } from "./Nearest";
 import { localStorage } from "../storage";
 import { hasGeolocation } from "../location";
 import { palette, permitColor, useTheme, Theme } from "../theme";
+import { useBottomSheetBody } from "./BottomSheet";
 import { Item } from "../types";
 
 interface ChildProps {
@@ -165,6 +166,8 @@ const Search: React.FC<ChildProps> = ({
   const theme = useTheme();
   const [, setSelectedItem] = useState("");
   const listRef = useRef<FlatList<Item>>(null);
+  // Scrolling is handed to the sheet unless it's fully open (see BottomSheet).
+  const { scrollProps } = useBottomSheetBody();
 
   const itemsList = locations as Item[];
 
@@ -242,6 +245,7 @@ const Search: React.FC<ChildProps> = ({
   return (
     <FlatList
       ref={listRef}
+      {...scrollProps}
       data={filtered}
       keyExtractor={(item) => item.key}
       keyboardShouldPersistTaps="handled"
