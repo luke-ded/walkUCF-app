@@ -403,8 +403,11 @@ const RouteList: React.FC<ChildProps> = ({
           contentContainerStyle={[
             styles.listContent,
             {
-              height: itemsList.length * ROW_HEIGHT,
-              paddingBottom: bottomInset + 16,
+              // Rows are absolutely positioned, so the content box needs an explicit
+              // height. Yoga counts padding inside that height, so the bottom inset is
+              // added to it rather than set as `paddingBottom` — otherwise the inset
+              // ate into the last row instead of clearing the home indicator.
+              height: itemsList.length * ROW_HEIGHT + bottomInset + 16,
             },
           ]}
         >

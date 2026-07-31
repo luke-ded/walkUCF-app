@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { MODAL_ORIENTATIONS } from "../orientation";
 import { palette, useTheme } from "../theme";
 
 interface ChildProps {
@@ -21,7 +22,13 @@ const ErrorModal: React.FC<ChildProps> = ({ toggleError }) => {
   }
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={close}>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      supportedOrientations={MODAL_ORIENTATIONS}
+      onRequestClose={close}
+    >
       <View style={[styles.backdrop, { backgroundColor: theme.overlay }]}>
         <View style={[styles.card, { borderColor: palette.red, backgroundColor: theme.panelSolid }]}>
           <View style={styles.cardBody}>

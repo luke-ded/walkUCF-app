@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Dimensions,
   Keyboard,
   LayoutChangeEvent,
   Platform,
@@ -179,23 +178,54 @@ function HomePage() {
   useEffect(() => {
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    // Rotating with the keyboard up resizes it without a show/hide event, so track
+    // frame changes too — but only while it's already up, since the hide animation
+    // also reports frames.
+    const frameEvt =
+      Platform.OS === "ios" ? "keyboardWillChangeFrame" : "keyboardDidChangeFrame";
     const showSub = Keyboard.addListener(showEvt, (e) =>
       setKeyboardHeight(e.endCoordinates.height),
     );
     const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    const frameSub = Keyboard.addListener(frameEvt, (e) =>
+      setKeyboardHeight((prev) => (prev > 0 ? e.endCoordinates.height : prev)),
+    );
     return () => {
       showSub.remove();
       hideSub.remove();
+      frameSub.remove();
     };
   }, []);
 
+  // The insets are derived from two layout events rather than from `Dimensions`:
+  // on a rotation the layout pass can land before `Dimensions` reports the new
+  // window size, which left the bottom inset (and everything padded by it) sized
+  // for the previous orientation until the next unrelated re-render.
+  const frameHeight = useRef(0);
+  const probeBox = useRef({ y: 0, height: 0 });
+
+  function commitInsets() {
+    const { y, height } = probeBox.current;
+    if (frameHeight.current <= 0 || height <= 0) return;
+    const top = Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : y;
+    const bottom = Math.max(frameHeight.current - y - height, 0);
+    setInsets((prev) =>
+      prev.top === top && prev.bottom === bottom ? prev : { top, bottom },
+    );
+  }
+
+  // Outer probe: the full app frame, unaffected by the safe area.
+  function onMeasureFrame(e: LayoutChangeEvent) {
+    frameHeight.current = e.nativeEvent.layout.height;
+    commitInsets();
+  }
+
+  // Inner probe: the same frame inset by the safe area, so its offset and height
+  // give the top and bottom insets.
   function onMeasureInsets(e: LayoutChangeEvent) {
     const { y, height } = e.nativeEvent.layout;
-    const winH = Dimensions.get("window").height;
-    setInsets({
-      top: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : y,
-      bottom: Math.max(winH - y - height, 0),
-    });
+    probeBox.current = { y, height };
+    commitInsets();
   }
 
   function enterSearch() {
@@ -352,9 +382,15 @@ function HomePage() {
       </BottomSheet>
 
       {/* Invisible probe that reports the safe-area insets */}
-      <SafeAreaView style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View style={styles.fill} onLayout={onMeasureInsets} />
-      </SafeAreaView>
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+        onLayout={onMeasureFrame}
+      >
+        <SafeAreaView style={styles.fill}>
+          <View style={styles.fill} onLayout={onMeasureInsets} />
+        </SafeAreaView>
+      </View>
 
       {about && <About toggleAbout={toggleAbout} />}
       {error && <ErrorModal toggleError={toggleError} />}

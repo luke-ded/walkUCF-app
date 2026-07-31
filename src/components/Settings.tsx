@@ -11,6 +11,7 @@ import {
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { localStorage } from "../storage";
 import { hasGeolocation } from "../location";
+import { MODAL_ORIENTATIONS } from "../orientation";
 import { palette, useTheme } from "../theme";
 import { Settings as SettingsType } from "../types";
 
@@ -138,7 +139,13 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={cancel}>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      supportedOrientations={MODAL_ORIENTATIONS}
+      onRequestClose={cancel}
+    >
       <View style={[styles.backdrop, { backgroundColor: theme.overlay }]}>
         <View
           style={[

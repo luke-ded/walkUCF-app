@@ -9,7 +9,6 @@ import React, {
 } from "react";
 import {
   Animated,
-  Dimensions,
   LayoutChangeEvent,
   PanResponder,
   StyleSheet,
@@ -49,39 +48,37 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
   ref,
 ) {
   const theme = useTheme();
-  const [winH, setWinH] = useState(() => Dimensions.get("window").height);
   const [peekH, setPeekH] = useState(0);
-  const ready = peekH > 0;
+  // The sheet's own laid-out height, rather than a height computed from
+  // `Dimensions`: the "change" event and the layout pass arrive independently on
+  // a rotation, so a Dimensions-derived height left the detents (and the map's
+  // obscured-bottom margin) stale for a frame or more. Measuring the sheet also
+  // keeps it correct in iPad Split View, where the app frame isn't the screen.
+  const [fullHeight, setFullHeight] = useState(0);
+  const ready = peekH > 0 && fullHeight > 0;
 
   useEffect(() => {
     if (peekH > 0) onPeekHeightChange?.(peekH);
   }, [peekH, onPeekHeightChange]);
 
-  const translateY = useRef(new Animated.Value(winH)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
   const indexRef = useRef(0);
   const startY = useRef(0);
   const didInit = useRef(false);
 
-  useEffect(() => {
-    const sub = Dimensions.addEventListener("change", ({ window }) =>
-      setWinH(window.height),
-    );
-    return () => sub.remove();
-  }, []);
-
   const sheetTop = topInset + TOP_GAP;
-  const fullHeight = Math.max(winH - sheetTop, 0);
 
   // Visible height of each detent, expressed as a translateY offset from the
   // fully-open position (index 0 = peek, 1 = half, 2 = full).
   const snaps = useMemo(() => {
+    const winH = fullHeight + sheetTop;
     const peekTranslate = Math.max(fullHeight - peekH, 0);
     const halfTranslate = Math.min(
       Math.max(fullHeight - winH * HALF_RATIO, 0),
       peekTranslate,
     );
     return [peekTranslate, halfTranslate, 0];
-  }, [fullHeight, peekH, winH]);
+  }, [fullHeight, peekH, sheetTop]);
 
   const animateTo = useCallback(
     (index: number, velocity = 0) => {
@@ -116,8 +113,9 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
   useEffect(() => {
     if (!ready) return;
     if (!didInit.current) {
-      // First time we know the peek height: slide up from off-screen.
+      // First time we know the geometry: slide up from off-screen.
       didInit.current = true;
+      translateY.setValue(fullHeight);
       animateTo(0);
     } else {
       // Geometry changed later (peek height, rotation, insets) — settle instantly
@@ -125,7 +123,7 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
       translateY.stopAnimation();
       translateY.setValue(snaps[indexRef.current]);
     }
-  }, [ready, snaps, animateTo, translateY]);
+  }, [ready, snaps, fullHeight, animateTo, translateY]);
 
   const pan = useMemo(
     () =>
@@ -168,16 +166,21 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
 
   return (
     <Animated.View
+      // Anchored top-and-bottom so Yoga derives the height on every resize; the
+      // measured value feeds the detents (see `fullHeight` above).
       style={[
         styles.sheet,
         {
-          height: fullHeight,
+          top: sheetTop,
           backgroundColor: theme.sheetBg,
           borderColor: theme.controlBorder,
           transform: [{ translateY }],
           opacity: ready ? 1 : 0,
         },
       ]}
+      onLayout={(e: LayoutChangeEvent) =>
+        setFullHeight(e.nativeEvent.layout.height)
+      }
     >
       <View
         {...pan.panHandlers}

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   ImageSourcePropType,
+  LayoutChangeEvent,
   Modal,
   Platform,
   Pressable,
@@ -26,6 +26,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { createGraph, dijkstra } from "./Dijkstra";
 import { localStorage } from "../storage";
 import { watchPosition } from "../location";
+import { MODAL_ORIENTATIONS } from "../orientation";
 import { useTheme } from "../theme";
 import { Item, Settings } from "../types";
 import selectImage from "../assets/gold-select-marker-icon.png";
@@ -321,12 +322,25 @@ const MapBox: React.FC<ChildProps> = ({
     lng: CENTER.longitudeDelta,
   });
 
+  // The map's own laid-out height, tracked in a ref for the callbacks below and in
+  // state to drive the boundary effect. Measured rather than read from
+  // `Dimensions`, which can still report the previous orientation's size when the
+  // post-rotation layout lands (and never matches the app frame in Split View).
+  const mapHeight = useRef(0);
+  const [mapHeightState, setMapHeightState] = useState(0);
+
+  function onMeasureMap(e: LayoutChangeEvent) {
+    const { height } = e.nativeEvent.layout;
+    mapHeight.current = height;
+    setMapHeightState(height);
+  }
+
   // Convert the obscured bottom height (px) to a latitude span at a given zoom.
   const BOTTOM_DRAG_GAP = 10;
   function southMarginDeg(viewportLatDelta: number): number {
-    const screenH = Dimensions.get("window").height;
-    if (screenH <= 0) return 0;
-    return ((obscuredBottom + BOTTOM_DRAG_GAP) / screenH) * viewportLatDelta;
+    const h = mapHeight.current;
+    if (h <= 0) return 0;
+    return ((obscuredBottom + BOTTOM_DRAG_GAP) / h) * viewportLatDelta;
   }
 
   const [selectedPoint, setSelectedPoint] = useState<LatLng | null>(null);
@@ -344,13 +358,17 @@ const MapBox: React.FC<ChildProps> = ({
     ),
   );
 
-  // Re-derive the boundary when the obscured-bottom height changes, using the last zoom.
+  // Re-derive the boundary when the obscured-bottom height or the map's own size
+  // changes. The immediate pass uses the last known zoom so panning isn't locked
+  // for a frame; a resize also changes the viewport's aspect ratio, so re-read the
+  // real deltas from the map afterwards.
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     const { lat, lng } = lastDeltas.current;
     setBoundary(computeBoundary(lat, lng, southMarginDeg(lat)));
+    recomputeBoundaryFromMap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [obscuredBottom]);
+  }, [obscuredBottom, mapHeightState]);
 
   // `shouldReplaceMapContent` applies on iOS only as a prop update, not at mount; mount
   // it off and flip it on after first commit so a cold-start custom tile replaces the base map.
@@ -608,7 +626,7 @@ const MapBox: React.FC<ChildProps> = ({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={onMeasureMap}>
       <MapView
         ref={mapRef}
         provider={PROVIDER_DEFAULT}
@@ -728,6 +746,7 @@ const MapBox: React.FC<ChildProps> = ({
         visible={tileModal}
         transparent
         animationType="fade"
+        supportedOrientations={MODAL_ORIENTATIONS}
         onRequestClose={() => setTileModal(false)}
       >
         <Pressable

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { MODAL_ORIENTATIONS } from "../orientation";
 import { palette, useTheme } from "../theme";
 
 interface ChildProps {
@@ -34,7 +35,13 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
   );
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={close}>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      supportedOrientations={MODAL_ORIENTATIONS}
+      onRequestClose={close}
+    >
       <View style={[styles.backdrop, { backgroundColor: theme.overlay }]}>
         <View
           style={[
