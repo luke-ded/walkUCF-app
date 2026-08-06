@@ -55,8 +55,16 @@ interface ChildProps {
 
 const displayAllPaths = false; // Change to true to view all paths
 
-// Native base map (Apple/Google); the UrlTile stays mounted but hidden (opacity 0).
+// Native base maps (Apple MapKit on iOS, Google on Android) drawn by the map view
+// itself; for these the UrlTile stays mounted but hidden (opacity 0).
 const NATIVE_MAP = "Native";
+// Apple's satellite imagery has no public raster tile endpoint, so it's rendered as a
+// native mapType rather than a UrlTile. Replaces the former Esri/ArcGIS raster layer.
+const SATELLITE_MAP = "Satellite";
+const LEGACY_SATELLITE_MAP = "ERSI Satellite";
+
+const isNativeTile = (key: string) =>
+  key === NATIVE_MAP || key === SATELLITE_MAP;
 
 // Stadia Maps requires an API key for non-browser (mobile) requests; appended as a
 // query param. Set EXPO_PUBLIC_STADIA_API_KEY in .env (see .env.example).
@@ -68,10 +76,8 @@ const STADIA_TILE_URL =
 const tileSelectionOptions = new Map<string, string>([
   [NATIVE_MAP, ""],
   ["OSM Default", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-  [
-    "ERSI Satellite",
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-  ],
+  // Native imagery layer, so no tile URL (see SATELLITE_MAP above).
+  [SATELLITE_MAP, ""],
   // Stadia answers keyless requests with a 401, which would render as an empty layer,
   // so the option is offered only when a key was present at build time.
   ...(STADIA_API_KEY ? [["Stadia", STADIA_TILE_URL] as [string, string]] : []),
@@ -89,9 +95,14 @@ function resolveInitialTile(): string {
     localStorage.setItem("tile", NATIVE_MAP);
     return NATIVE_MAP;
   }
+  const stored = localStorage.getItem("tile");
+  // Carry installs that were on the retired Esri raster layer over to native imagery.
+  if (stored === LEGACY_SATELLITE_MAP) {
+    localStorage.setItem("tile", SATELLITE_MAP);
+    return SATELLITE_MAP;
+  }
   // A persisted layer can stop being offered between builds (Stadia without a key),
   // which would otherwise leave the map blank with no matching row in the picker.
-  const stored = localStorage.getItem("tile");
   return stored != null && tileSelectionOptions.has(stored)
     ? stored
     : NATIVE_MAP;
@@ -100,22 +111,19 @@ function resolveInitialTile(): string {
 // Friendly display names for the persisted tile keys (keys kept stable for storage).
 const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
+  [SATELLITE_MAP]: "Satellite",
   "OSM Default": "OpenStreetMap",
-  "ERSI Satellite": "Satellite",
   Stadia: "Bright",
   Carto: "Light",
 };
 
 // Credit required by each provider's terms of use, shown over the map while that layer
-// is active. The native base map draws MapKit's own legal link, so it needs none here.
+// is active. The native base maps (including satellite) draw MapKit's own legal link,
+// so they need none here.
 const tileAttribution: Record<string, { text: string; url: string }> = {
   "OSM Default": {
     text: "© OpenStreetMap contributors",
     url: "https://www.openstreetmap.org/copyright",
-  },
-  "ERSI Satellite": {
-    text: "Esri, Maxar, Earthstar Geographics",
-    url: "https://www.esri.com/en-us/legal/terms/full-master-agreement",
   },
   Stadia: {
     text: "© Stadia Maps © OpenMapTiles © OpenStreetMap",
@@ -419,9 +427,9 @@ const MapBox: React.FC<ChildProps> = ({
   }, []);
 
   // Custom tile layers have no load event, so show the spinner briefly on a timer
-  // when a non-native layer is selected (the native base map is instant).
+  // when a non-native layer is selected (the native base maps are instant).
   useEffect(() => {
-    if (tileSelection === NATIVE_MAP) {
+    if (isNativeTile(tileSelection)) {
       setLoading(false);
       return;
     }
@@ -672,11 +680,15 @@ const MapBox: React.FC<ChildProps> = ({
         pitchEnabled={false}
         onPress={onMapPress}
         onRegionChangeComplete={handleRegionChangeComplete}
-        // Android can't replace the base map, so hide it (mapType "none"); iOS uses shouldReplaceMapContent.
+        // "hybrid" draws the platform's own satellite imagery (Apple MapKit on iOS,
+        // Google on Android) with road/place labels on top. Otherwise: Android can't
+        // replace the base map, so hide it (mapType "none"); iOS uses shouldReplaceMapContent.
         mapType={
-          Platform.OS === "android" && tileSelection !== NATIVE_MAP
-            ? "none"
-            : "standard"
+          tileSelection === SATELLITE_MAP
+            ? "hybrid"
+            : Platform.OS === "android" && !isNativeTile(tileSelection)
+              ? "none"
+              : "standard"
         }
         onMapReady={() => {
           setLoading(false);
@@ -686,19 +698,21 @@ const MapBox: React.FC<ChildProps> = ({
         {/* Kept permanently mounted so a layer switch is a prop update, not a fresh mount */}
         <UrlTile
           urlTemplate={
-            tileSelection === NATIVE_MAP
+            isNativeTile(tileSelection)
               ? NATIVE_PLACEHOLDER_URL
               : tileSelectionOptions.get(tileSelection)!
           }
           maximumZ={19}
           // In native mode a minimumZ above the max zoom makes the mounted overlay inert,
           // so MapKit requests no tiles (the invisible overlay otherwise froze pinch-zoom).
-          minimumZ={tileSelection === NATIVE_MAP ? 22 : 0}
+          minimumZ={isNativeTile(tileSelection) ? 22 : 0}
           flipY={false}
-          shouldReplaceMapContent={replaceApplied && tileSelection !== NATIVE_MAP}
-          opacity={tileSelection === NATIVE_MAP ? 0 : 1}
+          shouldReplaceMapContent={
+            replaceApplied && !isNativeTile(tileSelection)
+          }
+          opacity={isNativeTile(tileSelection) ? 0 : 1}
           // Also keep it off the network in native mode, where it should never draw.
-          offlineMode={tileSelection === NATIVE_MAP}
+          offlineMode={isNativeTile(tileSelection)}
         />
 
         {/* Computed route legs */}
