@@ -16,6 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.walkucf.app",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "walkUCF uses your location to show where you are on campus and to route from your current location."
       }
     },
@@ -34,7 +35,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "walkUCF uses your location to show where you are on campus and to route from your current location."
+          "locationWhenInUsePermission": "walkUCF uses your location to show where you are on campus and to route from your current location.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
         }
       ]
     ]

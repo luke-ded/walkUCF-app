@@ -81,6 +81,11 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
             <Text style={[styles.paragraph, { color: theme.text }]}>
               Thanks for using <Text style={styles.bold}>walkUCF</Text>!
             </Text>
+            <Text style={[styles.disclaimer, { color: theme.secondaryText }]}>
+              walkUCF is an independent student project. It is not affiliated
+              with, endorsed by, or sponsored by the University of Central
+              Florida.
+            </Text>
           </View>
           <View style={styles.cardFooter}>
             <TouchableOpacity
@@ -153,6 +158,12 @@ const styles = StyleSheet.create({
   },
   bold: {
     fontWeight: "700",
+  },
+  disclaimer: {
+    textAlign: "center",
+    marginTop: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   link: {
     fontWeight: "600",

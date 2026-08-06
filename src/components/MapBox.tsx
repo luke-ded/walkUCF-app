@@ -4,6 +4,7 @@ import {
   Image,
   ImageSourcePropType,
   LayoutChangeEvent,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -57,23 +58,12 @@ const displayAllPaths = false; // Change to true to view all paths
 // Native base map (Apple/Google); the UrlTile stays mounted but hidden (opacity 0).
 const NATIVE_MAP = "Native";
 
-// Resolve the initial tile, migrating old "OSM Default" installs to the native default once.
-const TILE_DEFAULT_VERSION = "nativeDefault-v1";
-function resolveInitialTile(): string {
-  if (localStorage.getItem("tileDefaultVersion") !== TILE_DEFAULT_VERSION) {
-    localStorage.setItem("tileDefaultVersion", TILE_DEFAULT_VERSION);
-    localStorage.setItem("tile", NATIVE_MAP);
-    return NATIVE_MAP;
-  }
-  return localStorage.getItem("tile") ?? NATIVE_MAP;
-}
-
 // Stadia Maps requires an API key for non-browser (mobile) requests; appended as a
 // query param. Set EXPO_PUBLIC_STADIA_API_KEY in .env (see .env.example).
 const STADIA_API_KEY = process.env.EXPO_PUBLIC_STADIA_API_KEY ?? "";
 const STADIA_TILE_URL =
   "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png" +
-  (STADIA_API_KEY ? `?api_key=${STADIA_API_KEY}` : "");
+  `?api_key=${STADIA_API_KEY}`;
 
 const tileSelectionOptions = new Map<string, string>([
   [NATIVE_MAP, ""],
@@ -82,12 +72,30 @@ const tileSelectionOptions = new Map<string, string>([
     "ERSI Satellite",
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   ],
-  ["Stadia", STADIA_TILE_URL],
+  // Stadia answers keyless requests with a 401, which would render as an empty layer,
+  // so the option is offered only when a key was present at build time.
+  ...(STADIA_API_KEY ? [["Stadia", STADIA_TILE_URL] as [string, string]] : []),
   [
     "Carto",
     "https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}.png",
   ],
 ]);
+
+// Resolve the initial tile, migrating old "OSM Default" installs to the native default once.
+const TILE_DEFAULT_VERSION = "nativeDefault-v1";
+function resolveInitialTile(): string {
+  if (localStorage.getItem("tileDefaultVersion") !== TILE_DEFAULT_VERSION) {
+    localStorage.setItem("tileDefaultVersion", TILE_DEFAULT_VERSION);
+    localStorage.setItem("tile", NATIVE_MAP);
+    return NATIVE_MAP;
+  }
+  // A persisted layer can stop being offered between builds (Stadia without a key),
+  // which would otherwise leave the map blank with no matching row in the picker.
+  const stored = localStorage.getItem("tile");
+  return stored != null && tileSelectionOptions.has(stored)
+    ? stored
+    : NATIVE_MAP;
+}
 
 // Friendly display names for the persisted tile keys (keys kept stable for storage).
 const tileLabels: Record<string, string> = {
@@ -96,6 +104,27 @@ const tileLabels: Record<string, string> = {
   "ERSI Satellite": "Satellite",
   Stadia: "Bright",
   Carto: "Light",
+};
+
+// Credit required by each provider's terms of use, shown over the map while that layer
+// is active. The native base map draws MapKit's own legal link, so it needs none here.
+const tileAttribution: Record<string, { text: string; url: string }> = {
+  "OSM Default": {
+    text: "© OpenStreetMap contributors",
+    url: "https://www.openstreetmap.org/copyright",
+  },
+  "ERSI Satellite": {
+    text: "Esri, Maxar, Earthstar Geographics",
+    url: "https://www.esri.com/en-us/legal/terms/full-master-agreement",
+  },
+  Stadia: {
+    text: "© Stadia Maps © OpenMapTiles © OpenStreetMap",
+    url: "https://stadiamaps.com/attribution/",
+  },
+  Carto: {
+    text: "© CARTO © OpenStreetMap contributors",
+    url: "https://carto.com/attributions",
+  },
 };
 
 // Placeholder URL for the hidden UrlTile in native mode; must differ from every real
@@ -611,6 +640,8 @@ const MapBox: React.FC<ChildProps> = ({
     [stops],
   );
 
+  const attribution = tileAttribution[tileSelection];
+
   // Stable element for the off-campus dimming mask; memoized so it's never re-sent to native.
   const campusMask = useMemo(
     () => (
@@ -739,6 +770,32 @@ const MapBox: React.FC<ChildProps> = ({
           color={theme.primary}
           size="small"
         />
+      )}
+
+      {/* Provider credit, required by the tile terms of use. Sits just above the
+          minimized sheet so it stays visible while the sheet covers the map. */}
+      {attribution && (
+        <TouchableOpacity
+          style={[
+            styles.attribution,
+            {
+              bottom: obscuredBottom + 8,
+              backgroundColor: theme.controlBg,
+              borderColor: theme.controlBorder,
+            },
+          ]}
+          onPress={() => Linking.openURL(attribution.url)}
+          activeOpacity={0.7}
+          accessibilityRole="link"
+          accessibilityLabel={"Map data by " + attribution.text}
+        >
+          <Text
+            style={[styles.attributionText, { color: theme.secondaryText }]}
+            numberOfLines={1}
+          >
+            {attribution.text}
+          </Text>
+        </TouchableOpacity>
       )}
 
       {/* Map style modal */}
@@ -874,6 +931,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
+  },
+  attribution: {
+    position: "absolute",
+    left: 14,
+    maxWidth: "88%",
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  attributionText: {
+    fontSize: 10,
   },
   tileBackdrop: {
     flex: 1,

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Linking,
   Modal,
   Platform,
   StyleSheet,
@@ -212,6 +213,26 @@ const Settings: React.FC<ChildProps> = ({ triggerRerender, toggleSettings }) => 
                 />
               </View>
             )}
+
+            {/* The system prompt is only ever shown once, so a denied permission
+                can be undone from here rather than being a dead end. */}
+            {hasGeolocation && !permissionStatus && (
+              <View style={styles.settingRow}>
+                <Text style={[styles.settingLabel, { color: theme.text }]}>Show Location:</Text>
+                <TouchableOpacity
+                  style={[styles.linkButton, { backgroundColor: theme.fillBg }]}
+                  onPress={() => Linking.openSettings()}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.linkButtonText, { color: theme.primary }]}
+                    numberOfLines={1}
+                  >
+                    Enable in Settings
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
           <View style={styles.cardFooter}>
             <TouchableOpacity
@@ -312,6 +333,17 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     fontSize: 14,
+    fontWeight: "600",
+  },
+  linkButton: {
+    height: 36,
+    width: 152,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  linkButtonText: {
+    fontSize: 13,
     fontWeight: "600",
   },
   speedInput: {

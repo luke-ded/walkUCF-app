@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  AppState,
   Keyboard,
   LayoutChangeEvent,
   Platform,
@@ -159,11 +160,16 @@ function HomePage() {
     setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  // Settings reads the persisted status to decide between the "Show Location"
+  // toggle and the "Enable in Settings" link, so every sync writes it back.
+  function syncLocationPermission(granted: boolean) {
+    localStorage.setItem("permissionStatus", JSON.stringify(granted));
+    setLocationGranted(granted);
+  }
+
   async function checkGeolocationPermission() {
     try {
-      const granted = await requestLocationPermission();
-      localStorage.setItem("permissionStatus", JSON.stringify(granted));
-      setLocationGranted(granted);
+      syncLocationPermission(await requestLocationPermission());
     } catch (error) {
       console.error("Error querying permissions:", error);
     }
@@ -184,9 +190,21 @@ function HomePage() {
       localStorage.setItem("permissionChecked", "true");
     } else {
       // Re-sync on warm launches in case permission changed in system settings.
-      checkLocationPermission().then(setLocationGranted);
+      checkLocationPermission().then(syncLocationPermission);
     }
   }, [welcome]);
+
+  // Re-read the permission whenever the app comes back to the foreground, so
+  // granting it from the Settings modal's link takes effect on return rather
+  // than only after the next cold launch.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        checkLocationPermission().then(syncLocationPermission);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // Track the keyboard so the results list can keep its last rows reachable.
   useEffect(() => {
