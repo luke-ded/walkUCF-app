@@ -369,6 +369,7 @@ function HomePage() {
           grass={options.grass}
           parking={options.parking}
           topInset={insets.top}
+          bottomInset={insets.bottom}
           obscuredBottom={peekHeight}
           locationGranted={locationGranted}
           onMapPress={collapseSheet}

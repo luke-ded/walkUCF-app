@@ -45,6 +45,9 @@ interface ChildProps {
   parking: boolean;
   // Safe-area top inset so the floating map controls clear the status bar.
   topInset: number;
+  // Safe-area bottom inset; MapKit measures its ornament margins from the safe area,
+  // so it has to be discounted to line the Legal link up with the credit pill.
+  bottomInset: number;
   // Map height (px) hidden behind the minimized sheet; relaxes the south drag bound.
   obscuredBottom: number;
   // Whether foreground location permission is granted.
@@ -129,6 +132,10 @@ const tileAttribution: Record<string, { text: string; url: string }> = {
     url: "https://carto.com/attributions",
   },
 };
+
+// Gap between the top of the minimized sheet and the map credits that sit above it —
+// MapKit's own Legal link and the tile credit pill, which share this baseline.
+const CREDIT_GAP = 8;
 
 // Placeholder URL for the hidden UrlTile in native mode; must differ from every real
 // tile URL so iOS rebuilds the overlay on switch (the .invalid TLD never collides).
@@ -341,6 +348,7 @@ const MapBox: React.FC<ChildProps> = ({
   grass,
   parking,
   topInset,
+  bottomInset,
   obscuredBottom,
   locationGranted,
   onMapPress,
@@ -645,6 +653,16 @@ const MapBox: React.FC<ChildProps> = ({
 
   const attribution = tileAttribution[tileSelection];
 
+  const mapPadding = useMemo(
+    () => ({
+      top: 0,
+      right: 0,
+      bottom: Math.max(obscuredBottom + CREDIT_GAP - bottomInset, 0),
+      left: 8,
+    }),
+    [obscuredBottom, bottomInset],
+  );
+
   // Stable element for the off-campus dimming mask; memoized so it's never re-sent to native.
   const campusMask = useMemo(
     () => (
@@ -671,6 +689,7 @@ const MapBox: React.FC<ChildProps> = ({
         {...(Platform.OS === "ios"
           ? ({ cameraZoomRange: ZOOM_RANGE, cameraBoundary: boundary } as object)
           : { minZoomLevel: 15, maxZoomLevel: 18 })}
+        {...(Platform.OS === "ios" ? { mapPadding } : null)}
         rotateEnabled={false}
         pitchEnabled={false}
         onPress={onMapPress}
@@ -788,7 +807,7 @@ const MapBox: React.FC<ChildProps> = ({
           style={[
             styles.attribution,
             {
-              bottom: obscuredBottom + 8,
+              bottom: obscuredBottom + CREDIT_GAP,
               backgroundColor: theme.controlBg,
               borderColor: theme.controlBorder,
             },
