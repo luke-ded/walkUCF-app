@@ -75,7 +75,6 @@ const STADIA_TILE_URL =
 
 const tileSelectionOptions = new Map<string, string>([
   [NATIVE_MAP, ""],
-  ["OSM Default", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
   // Native imagery layer, so no tile URL (see SATELLITE_MAP above).
   [SATELLITE_MAP, ""],
   // Stadia answers keyless requests with a 401, which would render as an empty layer,
@@ -101,18 +100,18 @@ function resolveInitialTile(): string {
     localStorage.setItem("tile", SATELLITE_MAP);
     return SATELLITE_MAP;
   }
-  // A persisted layer can stop being offered between builds (Stadia without a key),
-  // which would otherwise leave the map blank with no matching row in the picker.
-  return stored != null && tileSelectionOptions.has(stored)
-    ? stored
-    : NATIVE_MAP;
+  // A persisted layer can stop being offered between builds (the retired OpenStreetMap
+  // layer, or Stadia without a key), which would otherwise leave the map blank with no
+  // matching row in the picker. Write the fallback back so storage stays in sync.
+  if (stored != null && tileSelectionOptions.has(stored)) return stored;
+  localStorage.setItem("tile", NATIVE_MAP);
+  return NATIVE_MAP;
 }
 
 // Friendly display names for the persisted tile keys (keys kept stable for storage).
 const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
   [SATELLITE_MAP]: "Satellite",
-  "OSM Default": "OpenStreetMap",
   Stadia: "Bright",
   Carto: "Light",
 };
@@ -121,10 +120,6 @@ const tileLabels: Record<string, string> = {
 // is active. The native base maps (including satellite) draw MapKit's own legal link,
 // so they need none here.
 const tileAttribution: Record<string, { text: string; url: string }> = {
-  "OSM Default": {
-    text: "© OpenStreetMap contributors",
-    url: "https://www.openstreetmap.org/copyright",
-  },
   Stadia: {
     text: "© Stadia Maps © OpenMapTiles © OpenStreetMap",
     url: "https://stadiamaps.com/attribution/",

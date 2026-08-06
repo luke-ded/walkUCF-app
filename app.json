@@ -14,6 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "UIRequiresFullScreen": true,
       "bundleIdentifier": "com.walkucf.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
