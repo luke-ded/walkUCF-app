@@ -14,11 +14,17 @@
     },
     "ios": {
       "supportsTablet": true,
-      "UIRequiresFullScreen": true,
+      "requireFullScreen": true,
       "bundleIdentifier": "com.walkucf.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "walkUCF uses your location to show where you are on campus and to route from your current location."
+        "NSLocationWhenInUseUsageDescription": "walkUCF uses your location to show where you are on campus and to route from your current location.",
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ]
       }
     },
     "android": {
