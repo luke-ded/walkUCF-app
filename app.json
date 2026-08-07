@@ -16,6 +16,7 @@
       "supportsTablet": true,
       "requireFullScreen": true,
       "bundleIdentifier": "com.walkucf.app",
+      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "walkUCF uses your location to show where you are on campus and to route from your current location.",

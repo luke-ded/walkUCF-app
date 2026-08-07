@@ -26,7 +26,7 @@ const FEATURES: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
   },
   {
     icon: "options",
-    text: "Toggle buildings, jaywalking, grass, and parking to shape the route.",
+    text: "Toggle buildings, grass, parking lots, and more to shape the route.",
   },
   {
     icon: "location",
