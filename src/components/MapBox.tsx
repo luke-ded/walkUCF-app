@@ -63,11 +63,15 @@ const displayAllPaths = false; // Change to true to view all paths
 const NATIVE_MAP = "Native";
 // Apple's satellite imagery has no public raster tile endpoint, so it's rendered as a
 // native mapType rather than a UrlTile. Replaces the former Esri/ArcGIS raster layer.
+// The plain variant is the same imagery with the road/place label overlay dropped.
 const SATELLITE_MAP = "Satellite";
+const SATELLITE_PLAIN_MAP = "Satellite Plain";
 const LEGACY_SATELLITE_MAP = "ERSI Satellite";
 
 const isNativeTile = (key: string) =>
-  key === NATIVE_MAP || key === SATELLITE_MAP;
+  key === NATIVE_MAP ||
+  key === SATELLITE_MAP ||
+  key === SATELLITE_PLAIN_MAP;
 
 // Stadia Maps requires an API key for non-browser (mobile) requests; appended as a
 // query param. Set EXPO_PUBLIC_STADIA_API_KEY in .env (see .env.example).
@@ -78,8 +82,9 @@ const STADIA_TILE_URL =
 
 const tileSelectionOptions = new Map<string, string>([
   [NATIVE_MAP, ""],
-  // Native imagery layer, so no tile URL (see SATELLITE_MAP above).
+  // Native imagery layers, so no tile URL (see SATELLITE_MAP above).
   [SATELLITE_MAP, ""],
+  [SATELLITE_PLAIN_MAP, ""],
   // Stadia answers keyless requests with a 401, which would render as an empty layer,
   // so the option is offered only when a key was present at build time.
   ...(STADIA_API_KEY ? [["Stadia", STADIA_TILE_URL] as [string, string]] : []),
@@ -111,6 +116,7 @@ function resolveInitialTile(): string {
 const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
   [SATELLITE_MAP]: "Satellite",
+  [SATELLITE_PLAIN_MAP]: "Satellite (No Labels)",
   Stadia: "Stadia Bright",
 };
 
@@ -685,15 +691,18 @@ const MapBox: React.FC<ChildProps> = ({
         pitchEnabled={false}
         onPress={onMapPress}
         onRegionChangeComplete={handleRegionChangeComplete}
-        // "hybrid" draws the platform's own satellite imagery (Apple MapKit on iOS,
-        // Google on Android) with road/place labels on top. Otherwise: Android can't
-        // replace the base map, so hide it (mapType "none"); iOS uses shouldReplaceMapContent.
+        // Both satellite options draw the platform's own imagery (Apple MapKit on iOS,
+        // Google on Android); "hybrid" adds the road/place label overlay, "satellite" is
+        // the bare imagery. Otherwise: Android can't replace the base map, so hide it
+        // (mapType "none"); iOS uses shouldReplaceMapContent.
         mapType={
           tileSelection === SATELLITE_MAP
             ? "hybrid"
-            : Platform.OS === "android" && !isNativeTile(tileSelection)
-              ? "none"
-              : "standard"
+            : tileSelection === SATELLITE_PLAIN_MAP
+              ? "satellite"
+              : Platform.OS === "android" && !isNativeTile(tileSelection)
+                ? "none"
+                : "standard"
         }
         onMapReady={() => {
           setLoading(false);
