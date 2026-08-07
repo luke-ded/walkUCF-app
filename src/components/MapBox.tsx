@@ -111,7 +111,7 @@ function resolveInitialTile(): string {
 const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
   [SATELLITE_MAP]: "Satellite",
-  Stadia: "Bright",
+  Stadia: "Stadia Bright",
 };
 
 // Credit required by each provider's terms of use, shown over the map while that layer
