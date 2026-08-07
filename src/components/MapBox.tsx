@@ -73,21 +73,13 @@ const isNativeTile = (key: string) =>
   key === SATELLITE_MAP ||
   key === SATELLITE_PLAIN_MAP;
 
-// Stadia Maps requires an API key for non-browser (mobile) requests; appended as a
-// query param. Set EXPO_PUBLIC_STADIA_API_KEY in .env (see .env.example).
-const STADIA_API_KEY = process.env.EXPO_PUBLIC_STADIA_API_KEY ?? "";
-const STADIA_TILE_URL =
-  "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}.png" +
-  `?api_key=${STADIA_API_KEY}`;
-
+// Every offered layer is currently drawn natively, so none carries a tile URL. The
+// UrlTile plumbing below is kept for a future raster layer; see NATIVE_PLACEHOLDER_URL.
 const tileSelectionOptions = new Map<string, string>([
   [NATIVE_MAP, ""],
   // Native imagery layers, so no tile URL (see SATELLITE_MAP above).
   [SATELLITE_MAP, ""],
   [SATELLITE_PLAIN_MAP, ""],
-  // Stadia answers keyless requests with a 401, which would render as an empty layer,
-  // so the option is offered only when a key was present at build time.
-  ...(STADIA_API_KEY ? [["Stadia", STADIA_TILE_URL] as [string, string]] : []),
 ]);
 
 // Resolve the initial tile, migrating old "OSM Default" installs to the native default once.
@@ -104,9 +96,9 @@ function resolveInitialTile(): string {
     localStorage.setItem("tile", SATELLITE_MAP);
     return SATELLITE_MAP;
   }
-  // A persisted layer can stop being offered between builds (the retired OpenStreetMap
-  // and Carto layers, or Stadia without a key), which would otherwise leave the map blank
-  // with no matching row in the picker. Write the fallback back so storage stays in sync.
+  // A persisted layer can stop being offered between builds (the retired OpenStreetMap,
+  // Carto, and Stadia layers), which would otherwise leave the map blank with no matching
+  // row in the picker. Write the fallback back so storage stays in sync.
   if (stored != null && tileSelectionOptions.has(stored)) return stored;
   localStorage.setItem("tile", NATIVE_MAP);
   return NATIVE_MAP;
@@ -117,18 +109,12 @@ const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
   [SATELLITE_MAP]: "Satellite",
   [SATELLITE_PLAIN_MAP]: "Satellite (No Labels)",
-  Stadia: "Stadia Bright",
 };
 
 // Credit required by each provider's terms of use, shown over the map while that layer
 // is active. The native base maps (including satellite) draw MapKit's own legal link,
-// so they need none here.
-const tileAttribution: Record<string, { text: string; url: string }> = {
-  Stadia: {
-    text: "© Stadia Maps © OpenMapTiles © OpenStreetMap",
-    url: "https://stadiamaps.com/attribution/",
-  },
-};
+// so they need none here — this is empty until a third-party raster layer is added back.
+const tileAttribution: Record<string, { text: string; url: string }> = {};
 
 // Gap between the top of the minimized sheet and the map credits that sit above it —
 // MapKit's own Legal link and the tile credit pill, which share this baseline.
