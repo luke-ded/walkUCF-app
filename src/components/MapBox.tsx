@@ -83,10 +83,6 @@ const tileSelectionOptions = new Map<string, string>([
   // Stadia answers keyless requests with a 401, which would render as an empty layer,
   // so the option is offered only when a key was present at build time.
   ...(STADIA_API_KEY ? [["Stadia", STADIA_TILE_URL] as [string, string]] : []),
-  [
-    "Carto",
-    "https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}.png",
-  ],
 ]);
 
 // Resolve the initial tile, migrating old "OSM Default" installs to the native default once.
@@ -104,8 +100,8 @@ function resolveInitialTile(): string {
     return SATELLITE_MAP;
   }
   // A persisted layer can stop being offered between builds (the retired OpenStreetMap
-  // layer, or Stadia without a key), which would otherwise leave the map blank with no
-  // matching row in the picker. Write the fallback back so storage stays in sync.
+  // and Carto layers, or Stadia without a key), which would otherwise leave the map blank
+  // with no matching row in the picker. Write the fallback back so storage stays in sync.
   if (stored != null && tileSelectionOptions.has(stored)) return stored;
   localStorage.setItem("tile", NATIVE_MAP);
   return NATIVE_MAP;
@@ -116,7 +112,6 @@ const tileLabels: Record<string, string> = {
   [NATIVE_MAP]: "Default",
   [SATELLITE_MAP]: "Satellite",
   Stadia: "Bright",
-  Carto: "Light",
 };
 
 // Credit required by each provider's terms of use, shown over the map while that layer
@@ -126,10 +121,6 @@ const tileAttribution: Record<string, { text: string; url: string }> = {
   Stadia: {
     text: "© Stadia Maps © OpenMapTiles © OpenStreetMap",
     url: "https://stadiamaps.com/attribution/",
-  },
-  Carto: {
-    text: "© CARTO © OpenStreetMap contributors",
-    url: "https://carto.com/attributions",
   },
 };
 

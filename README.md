@@ -15,8 +15,8 @@ platform-specific layers.
 - **Map options** — Buildings, Jaywalking, Parking Lots, Grass (each adds extra
   paths to the graph).
 - **Current location** — show your position and route from the nearest node.
-- **Tile options** — Default, Satellite (native Apple/Google imagery), OSM Default,
-  Stadia, Carto.
+- **Tile options** — Default and Satellite (both native Apple/Google imagery), plus
+  Bright (Stadia raster tiles, shown only when an API key is set at build time).
 - **Settings** — imperial/metric units, custom walking speed, show-location toggle.
 - **Live time & distance** readout for the planned route.
 - **Light / dark theme** and About / Error dialogs.
