@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { StyleSheet, Text, View, useColorScheme } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import HomePage from "./src/HomePage";
 import { hydrateStorage, localStorage } from "./src/storage";
@@ -33,23 +34,35 @@ export default function App() {
     theme: buildTheme(dark),
   };
 
-  if (!ready) {
-    return (
-      <View style={[styles.loader, { backgroundColor: themeValue.theme.screenBg }]}>
-        <StatusBar style={dark ? "light" : "dark"} />
-        <Text style={styles.wordmark}>
-          <Text style={{ color: "#ffffff" }}>walk</Text>
-          <Text style={{ color: themeValue.theme.primary }}>UCF</Text>
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <ThemeContext.Provider value={themeValue}>
-      <StatusBar style={dark ? "light" : "dark"} />
-      <HomePage />
-    </ThemeContext.Provider>
+    // SafeAreaProvider must sit above HomePage, which reads the insets through
+    // `useSafeAreaInsets` (react-native's own SafeAreaView is deprecated in 0.86
+    // and does not report insets on a resizable iPad window).
+    <SafeAreaProvider>
+      <ThemeContext.Provider value={themeValue}>
+        <StatusBar style={dark ? "light" : "dark"} />
+        {ready ? (
+          <HomePage />
+        ) : (
+          <View
+            style={[
+              styles.loader,
+              { backgroundColor: themeValue.theme.screenBg },
+            ]}
+          >
+            <Text style={styles.wordmark}>
+              {/* Pure white in dark mode so this hands off seamlessly from the
+                  launch screen's wordmark; in light mode that would be nearly
+                  invisible on the light background, so follow the theme. */}
+              <Text style={{ color: dark ? "#ffffff" : themeValue.theme.text }}>
+                walk
+              </Text>
+              <Text style={{ color: themeValue.theme.primary }}>UCF</Text>
+            </Text>
+          </View>
+        )}
+      </ThemeContext.Provider>
+    </SafeAreaProvider>
   );
 }
 

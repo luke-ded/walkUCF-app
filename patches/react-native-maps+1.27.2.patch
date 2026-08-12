@@ -1,0 +1,285 @@
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMap.mm b/node_modules/react-native-maps/ios/AirMaps/AIRMap.mm
+index f7da1e0..b091c92 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMap.mm
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMap.mm
+@@ -132,13 +132,17 @@ - (void)insertReactSubview:(id<RCTComponent>)subview atIndex:(NSInteger)atIndex
+         [self addAnnotation:(id <MKAnnotation>) subview];
+     } else if ([subview isKindOfClass:[AIRMapPolyline class]]) {
+         ((AIRMapPolyline *)subview).map = self;
+-        [self addOverlay:(id<MKOverlay>)subview];
++        // Add vector overlays at aboveLabels so they render above an opaque
++        // UrlTile (which is pinned to aboveLabels by AIRMapUrlTile's update).
++        // The bare addOverlay: defaults to aboveRoads (below the tile), which
++        // hid routes/polygons created while a custom tile was already selected.
++        [self addOverlay:(id<MKOverlay>)subview level:MKOverlayLevelAboveLabels];
+     } else if ([subview isKindOfClass:[AIRMapPolygon class]]) {
+         ((AIRMapPolygon *)subview).map = self;
+-        [self addOverlay:(id<MKOverlay>)subview];
++        [self addOverlay:(id<MKOverlay>)subview level:MKOverlayLevelAboveLabels];
+     } else if ([subview isKindOfClass:[AIRMapCircle class]]) {
+         ((AIRMapCircle *)subview).map = self;
+-        [self addOverlay:(id<MKOverlay>)subview];
++        [self addOverlay:(id<MKOverlay>)subview level:MKOverlayLevelAboveLabels];
+     } else if ([subview isKindOfClass:[AIRMapUrlTile class]]) {
+         ((AIRMapUrlTile *)subview).map = self;
+         [self addOverlay:(id<MKOverlay>)subview];
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
+index d034034..2303ce5 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapManager.m
+@@ -57,7 +57,12 @@ - (UIView *)view
+     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapTap:)];
+     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapDoubleTap:)];
+     [doubleTap setNumberOfTapsRequired:2];
+-    [tap requireGestureRecognizerToFail:doubleTap];
++    // Intentionally NOT requiring doubleTap to fail before the single tap: that
++    // dependency delayed onPress by UIKit's ~300ms double-tap timeout, which was a
++    // very noticeable lag before the bottom sheet collapsed on a map tap. The
++    // doubleTap recognizer here only drives the (unused) onDoublePress event;
++    // MapKit's own double-tap-to-zoom is a separate internal recognizer and is
++    // unaffected, so removing this just lets a single tap register immediately.
+ 
+     UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapLongPress:)];
+     UIPanGestureRecognizer *drag = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleMapDrag:)];
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapPolygon.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapPolygon.m
+index d400a3c..34ed592 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapPolygon.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapPolygon.m
+@@ -97,7 +97,9 @@ - (void) update
+ 
+     if (_map == nil) return;
+     [_map removeOverlay:self];
+-    [_map addOverlay:self];
++    // Re-add at aboveLabels so a coordinate update keeps the polygon above an opaque
++    // UrlTile (pinned to aboveLabels); the bare addOverlay: defaults to aboveRoads.
++    [_map addOverlay:self level:MKOverlayLevelAboveLabels];
+ }
+ 
+ #pragma mark MKOverlay implementation
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapPolyline.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapPolyline.m
+index 4f4596d..0fe0bde 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapPolyline.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapPolyline.m
+@@ -107,7 +107,11 @@ - (void) update
+     
+     if (_map == nil) return;
+     [_map removeOverlay:self];
+-    [_map addOverlay:self];
++    // Re-add at aboveLabels so a coordinate update keeps the line above an opaque
++    // UrlTile (pinned to aboveLabels). The bare addOverlay: defaults to aboveRoads
++    // (below the tile), which made a reused polyline vanish under custom tiles
++    // when its coordinates changed (e.g. toggling a route option).
++    [_map addOverlay:self level:MKOverlayLevelAboveLabels];
+ }
+ 
+ - (void) updateRenderer:(MKOverlayPathRenderer*)renderer {
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
+index f77f627..89dc1a5 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMapUrlTile.m
+@@ -187,7 +187,12 @@ - (void)update
+             continue;
+         }
+         [_map removeOverlay:overlay];
+-        [_map addOverlay:overlay];
++        // Re-add non-tile overlays (polylines, polygons) explicitly at
++        // MKOverlayLevelAboveLabels. The tile above is pinned to aboveLabels;
++        // the bare addOverlay: defaults to aboveRoads (below labels), so an
++        // opaque UrlTile would paint over routes/polygons. Matching the tile's
++        // level (and re-adding after it) keeps these overlays visible.
++        [_map addOverlay:overlay level:MKOverlayLevelAboveLabels];
+     }
+ }
+ 
+diff --git a/node_modules/react-native-maps/ios/AirMaps/RNMapsMapView.mm b/node_modules/react-native-maps/ios/AirMaps/RNMapsMapView.mm
+index 447520d..33b93cb 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/RNMapsMapView.mm
++++ b/node_modules/react-native-maps/ios/AirMaps/RNMapsMapView.mm
+@@ -620,6 +620,34 @@ - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &
+         [_view setCameraZoomRange:zoomRange animated:newViewProps.cameraZoomRange.animated];
+     }
+ 
++    // walkUCF patch: constrain the camera's center coordinate to a region, so the
++    // user cannot pan the map outside of it (MKMapView.cameraBoundary, iOS 13+;
++    // the podspec's deployment target is 15.1, so no availability guard needed).
++    // A non-positive span means "no boundary" and clears any existing one — that
++    // is what an omitted or incomplete `cameraBoundary` prop deserializes to,
++    // since missing struct members default to 0.
++    if (oldViewProps.cameraBoundary.latitude != newViewProps.cameraBoundary.latitude ||
++        oldViewProps.cameraBoundary.longitude != newViewProps.cameraBoundary.longitude ||
++        oldViewProps.cameraBoundary.latitudeDelta != newViewProps.cameraBoundary.latitudeDelta ||
++        oldViewProps.cameraBoundary.longitudeDelta != newViewProps.cameraBoundary.longitudeDelta ||
++        oldViewProps.cameraBoundary.animated != newViewProps.cameraBoundary.animated) {
++
++        if (newViewProps.cameraBoundary.latitudeDelta <= 0.0 ||
++            newViewProps.cameraBoundary.longitudeDelta <= 0.0) {
++            [_view setCameraBoundary:nil animated:NO];
++        } else {
++            MKCoordinateRegion region = MKCoordinateRegionMake(
++                CLLocationCoordinate2DMake(newViewProps.cameraBoundary.latitude,
++                                           newViewProps.cameraBoundary.longitude),
++                MKCoordinateSpanMake(newViewProps.cameraBoundary.latitudeDelta,
++                                     newViewProps.cameraBoundary.longitudeDelta));
++
++            MKMapCameraBoundary* boundary =
++                [[MKMapCameraBoundary alloc] initWithCoordinateRegion:region];
++            [_view setCameraBoundary:boundary animated:newViewProps.cameraBoundary.animated];
++        }
++    }
++
+     if (oldViewProps.pointsOfInterestFilter != newViewProps.pointsOfInterestFilter) {
+         NSMutableArray<NSString *> *filterArray = [NSMutableArray new];
+         for (const auto& str : newViewProps.pointsOfInterestFilter) {
+diff --git a/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.cpp b/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.cpp
+index ba41078..126991a 100644
+--- a/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.cpp
++++ b/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.cpp
+@@ -408,7 +408,9 @@ RNMapsMapViewProps::RNMapsMapViewProps(
+     zoomEnabled(convertRawProp(context, rawProps, "zoomEnabled", sourceProps.zoomEnabled, {true})),
+     showsTraffic(convertRawProp(context, rawProps, "showsTraffic", sourceProps.showsTraffic, {false})),
+     zoomTapEnabled(convertRawProp(context, rawProps, "zoomTapEnabled", sourceProps.zoomTapEnabled, {true})),
+-    cameraZoomRange(convertRawProp(context, rawProps, "cameraZoomRange", sourceProps.cameraZoomRange, {})) {}
++    cameraZoomRange(convertRawProp(context, rawProps, "cameraZoomRange", sourceProps.cameraZoomRange, {})),
++    // walkUCF patch: see RNMapsMapViewCameraBoundaryStruct in Props.h
++    cameraBoundary(convertRawProp(context, rawProps, "cameraBoundary", sourceProps.cameraBoundary, {})) {}
+     
+ #ifdef RN_SERIALIZABLE_STATE
+ ComponentName RNMapsMapViewProps::getDiffPropsImplementationTarget() const {
+@@ -637,6 +639,11 @@ folly::dynamic RNMapsMapViewProps::getDiffProps(
+   if (cameraZoomRange != oldProps->cameraZoomRange) {
+     result["cameraZoomRange"] = toDynamic(cameraZoomRange);
+   }
++
++  // walkUCF patch
++  if (cameraBoundary != oldProps->cameraBoundary) {
++    result["cameraBoundary"] = toDynamic(cameraBoundary);
++  }
+   return result;
+ }
+ #endif
+diff --git a/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.h b/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.h
+index 1249045..d78588d 100644
+--- a/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.h
++++ b/node_modules/react-native-maps/ios/generated/RNMapsSpecs/Props.h
+@@ -1368,6 +1368,71 @@ static inline folly::dynamic toDynamic(const RNMapsMapViewCameraZoomRangeStruct
+   return value.toDynamic();
+ }
+ #endif
++
++// walkUCF patch: `cameraBoundary` prop (MKMapView.cameraBoundary, iOS 13+).
++// Hand-written to match what codegen would emit for a CameraBoundary struct in
++// src/specs/NativeComponentMapView.ts. react-native-maps sets
++// `codegenConfig.includesGeneratedCode: true`, so React Native does NOT
++// regenerate this file from the spec (see
++// react-native/scripts/codegen/generate-artifacts-executor/index.js,
++// mustGenerateNativeCode) — the shipped ios/generated/** is what the podspec
++// compiles. Mirrors RNMapsMapViewCameraZoomRangeStruct above exactly.
++struct RNMapsMapViewCameraBoundaryStruct {
++  double latitude{0.0};
++  double longitude{0.0};
++  double latitudeDelta{0.0};
++  double longitudeDelta{0.0};
++  bool animated{false};
++
++#ifdef RN_SERIALIZABLE_STATE
++  bool operator==(const RNMapsMapViewCameraBoundaryStruct&) const = default;
++
++  folly::dynamic toDynamic() const {
++    folly::dynamic result = folly::dynamic::object();
++    result["latitude"] = latitude;
++    result["longitude"] = longitude;
++    result["latitudeDelta"] = latitudeDelta;
++    result["longitudeDelta"] = longitudeDelta;
++    result["animated"] = animated;
++    return result;
++  }
++#endif
++};
++
++static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, RNMapsMapViewCameraBoundaryStruct &result) {
++  auto map = (std::unordered_map<std::string, RawValue>)value;
++
++  auto tmp_latitude = map.find("latitude");
++  if (tmp_latitude != map.end()) {
++    fromRawValue(context, tmp_latitude->second, result.latitude);
++  }
++  auto tmp_longitude = map.find("longitude");
++  if (tmp_longitude != map.end()) {
++    fromRawValue(context, tmp_longitude->second, result.longitude);
++  }
++  auto tmp_latitudeDelta = map.find("latitudeDelta");
++  if (tmp_latitudeDelta != map.end()) {
++    fromRawValue(context, tmp_latitudeDelta->second, result.latitudeDelta);
++  }
++  auto tmp_longitudeDelta = map.find("longitudeDelta");
++  if (tmp_longitudeDelta != map.end()) {
++    fromRawValue(context, tmp_longitudeDelta->second, result.longitudeDelta);
++  }
++  auto tmp_animated = map.find("animated");
++  if (tmp_animated != map.end()) {
++    fromRawValue(context, tmp_animated->second, result.animated);
++  }
++}
++
++static inline std::string toString(const RNMapsMapViewCameraBoundaryStruct &value) {
++  return "[Object RNMapsMapViewCameraBoundaryStruct]";
++}
++
++#ifdef RN_SERIALIZABLE_STATE
++static inline folly::dynamic toDynamic(const RNMapsMapViewCameraBoundaryStruct &value) {
++  return value.toDynamic();
++}
++#endif
+ class RNMapsMapViewProps final : public ViewProps {
+  public:
+   RNMapsMapViewProps() = default;
+@@ -1428,6 +1493,7 @@ class RNMapsMapViewProps final : public ViewProps {
+   bool showsTraffic{false};
+   bool zoomTapEnabled{true};
+   RNMapsMapViewCameraZoomRangeStruct cameraZoomRange{};
++  RNMapsMapViewCameraBoundaryStruct cameraBoundary{}; // walkUCF patch
+ 
+   #ifdef RN_SERIALIZABLE_STATE
+   ComponentName getDiffPropsImplementationTarget() const override;
+diff --git a/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts b/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts
+index b4fd5c1..f6b21ca 100644
+--- a/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts
++++ b/node_modules/react-native-maps/src/specs/NativeComponentMapView.ts
+@@ -340,6 +340,20 @@ export type CameraZoomRange = Readonly<{
+   animated?: boolean; // Non-nullable boolean
+ }>;
+ 
++// walkUCF patch: region the map's center coordinate is constrained to.
++// NOTE: this package sets `codegenConfig.includesGeneratedCode: true`, so React
++// Native does not regenerate ios/generated/** from this spec. The matching C++
++// (RNMapsMapViewCameraBoundaryStruct) is hand-maintained in
++// ios/generated/RNMapsSpecs/Props.{h,cpp} and consumed in
++// ios/AirMaps/RNMapsMapView.mm. Keep all four in sync.
++export type CameraBoundary = Readonly<{
++  latitude?: Double;
++  longitude?: Double;
++  latitudeDelta?: Double;
++  longitudeDelta?: Double;
++  animated?: boolean;
++}>;
++
+ export interface MapFabricNativeProps extends ViewProps {
+   /**
+    * If `true` map will be cached and displayed as an image instead of being interactable, for performance usage.
+@@ -1066,6 +1080,16 @@ export interface MapFabricNativeProps extends ViewProps {
+    * @platform Android: Not supported
+    */
+   cameraZoomRange?: CameraZoomRange;
++
++  /**
++   * walkUCF patch: constrains the map's center coordinate to this region, so the
++   * user cannot pan outside it. A non-positive `latitudeDelta`/`longitudeDelta`
++   * clears the boundary.
++   *
++   * @platform iOS: 13.0+
++   * @platform Android: Not supported
++   */
++  cameraBoundary?: CameraBoundary;
+ }
+ 
+ interface NativeCommands {

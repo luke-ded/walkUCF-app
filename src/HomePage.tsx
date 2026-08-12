@@ -2,16 +2,14 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   AppState,
   Keyboard,
-  LayoutChangeEvent,
   Platform,
-  SafeAreaView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import NavBar from "./components/NavBar";
 import MapBox from "./components/MapBox";
@@ -107,10 +105,12 @@ function HomePage() {
   const [options, setOptions] = useState<RouteOptions>(loadRouteOptions);
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [insets, setInsets] = useState({
-    top: Platform.OS === "android" ? StatusBar.currentHeight ?? 24 : 47,
-    bottom: Platform.OS === "ios" ? 20 : 0,
-  });
+  // Safe-area insets come from react-native-safe-area-context rather than from
+  // measuring a pair of probe views. The probes derived the insets from an
+  // onLayout pass, which lagged a frame behind rotation and — now that
+  // UIRequiresFullScreen is ignored under the iPadOS 26 SDK — did not re-fire at
+  // all for some window resizes, leaving everything padded for the old size.
+  const insets = useSafeAreaInsets();
   // How much of the map the minimized sheet covers, so the map can be dragged
   // far enough to reveal the campus bottom above it.
   const [peekHeight, setPeekHeight] = useState(0);
@@ -228,37 +228,6 @@ function HomePage() {
       frameSub.remove();
     };
   }, []);
-
-  // The insets are derived from two layout events rather than from `Dimensions`:
-  // on a rotation the layout pass can land before `Dimensions` reports the new
-  // window size, which left the bottom inset (and everything padded by it) sized
-  // for the previous orientation until the next unrelated re-render.
-  const frameHeight = useRef(0);
-  const probeBox = useRef({ y: 0, height: 0 });
-
-  function commitInsets() {
-    const { y, height } = probeBox.current;
-    if (frameHeight.current <= 0 || height <= 0) return;
-    const top = Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : y;
-    const bottom = Math.max(frameHeight.current - y - height, 0);
-    setInsets((prev) =>
-      prev.top === top && prev.bottom === bottom ? prev : { top, bottom },
-    );
-  }
-
-  // Outer probe: the full app frame, unaffected by the safe area.
-  function onMeasureFrame(e: LayoutChangeEvent) {
-    frameHeight.current = e.nativeEvent.layout.height;
-    commitInsets();
-  }
-
-  // Inner probe: the same frame inset by the safe area, so its offset and height
-  // give the top and bottom insets.
-  function onMeasureInsets(e: LayoutChangeEvent) {
-    const { y, height } = e.nativeEvent.layout;
-    probeBox.current = { y, height };
-    commitInsets();
-  }
 
   function enterSearch() {
     setFocused(true);
@@ -414,17 +383,6 @@ function HomePage() {
         )}
       </BottomSheet>
 
-      {/* Invisible probe that reports the safe-area insets */}
-      <View
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-        onLayout={onMeasureFrame}
-      >
-        <SafeAreaView style={styles.fill}>
-          <View style={styles.fill} onLayout={onMeasureInsets} />
-        </SafeAreaView>
-      </View>
-
       {welcome && <Welcome onDismiss={dismissWelcome} />}
       {about && <About toggleAbout={toggleAbout} />}
       {error && <ErrorModal toggleError={toggleError} />}
@@ -440,9 +398,6 @@ function HomePage() {
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1,
-  },
-  fill: {
     flex: 1,
   },
   headerWrap: {

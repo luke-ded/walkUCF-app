@@ -940,7 +940,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    // `absoluteFillObject` was removed in React Native 0.86; `absoluteFill` is
+    // now the same plain object and is what it resolved to anyway. Spreading the
+    // old name silently produced an empty style, which left the map with no size.
+    ...StyleSheet.absoluteFill,
   },
   currentOuter: {
     width: 25,
