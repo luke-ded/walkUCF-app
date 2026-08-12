@@ -14,7 +14,6 @@
     },
     "ios": {
       "supportsTablet": true,
-      "requireFullScreen": true,
       "bundleIdentifier": "com.walkucf.app",
       "buildNumber": "1",
       "infoPlist": {

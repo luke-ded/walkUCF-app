@@ -26,7 +26,13 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return Math.abs(rad * c);
 }
 
-export function nearestPoint(currentLoc: number[]): Point {
+export interface NearestPoint {
+  point: Point;
+  /** Great-circle distance from `currentLoc` to `point`, in kilometers. */
+  distanceKm: number;
+}
+
+export function nearestPoint(currentLoc: number[]): NearestPoint {
   const points: Point[] = pointsData as Point[];
   var closestPoint: Point = { id: -1, lat: -1, lon: -1 };
   var closestDist: number = Infinity;
@@ -39,5 +45,5 @@ export function nearestPoint(currentLoc: number[]): Point {
     }
   });
 
-  return closestPoint;
+  return { point: closestPoint, distanceKm: closestDist };
 }

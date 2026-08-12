@@ -35,6 +35,48 @@ interface ItemProps {
   triggerRerender: () => void;
 }
 
+// The campus graph is dense enough that anyone actually on it is within ~100m of a
+// node, so a fix further out than this is somewhere else entirely and would snap to
+// an arbitrary campus node. The margin is generous so a student in an unmapped
+// perimeter lot still gets to route.
+const OFF_CAMPUS_KM = 1;
+
+// How long a stored fix stays usable. The map's watch refreshes it every couple of
+// seconds while Show Location is on, so anything older than this was left behind by
+// an earlier session or by the setting being switched off since.
+const FIX_MAX_AGE_MS = 5 * 60 * 1000;
+
+const LOCATION_SUBTITLE = {
+  ready: "Route from where you are",
+  offCampus: "You appear to be off campus",
+  waiting: "Finding your location…",
+  off: "Show Location is off in settings",
+} as const;
+
+/** The stored position, or null when there isn't a current one to route from. */
+function readFix(raw: string | null): { lat: number; lon: number } | null {
+  if (raw == null || !hasGeolocation) return null;
+  try {
+    const [lat, lon, takenAt] = JSON.parse(raw);
+    // Positions written by builds before they were stamped have no `takenAt` and
+    // so read as stale, which is right — they predate this launch.
+    if (typeof takenAt !== "number" || Date.now() - takenAt > FIX_MAX_AGE_MS)
+      return null;
+    return { lat, lon };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the user has the location dot — and so the position watch — turned on. */
+function showLocationSetting(): boolean {
+  try {
+    return JSON.parse(localStorage.getItem("settings")!).showLocation !== false;
+  } catch {
+    return true;
+  }
+}
+
 const PermitChips: React.FC<{ permits?: string[] }> = ({ permits }) => {
   if (!permits) return null;
   return (
@@ -190,21 +232,42 @@ const Search: React.FC<ChildProps> = ({
     onAdded();
   }
 
+  // Parsed on each render rather than memoized, so the fix is aged against the
+  // current time. A fix older than this is from a previous session, or from before
+  // Show Location was switched off, and says nothing about where the user is now.
+  const fix = readFix(localStorage.getItem("currentLocation"));
+
+  // Keyed on the coordinates themselves: the scan walks every node in the graph,
+  // and this component re-renders on each keystroke.
+  const nearest = useMemo(
+    () => (fix ? nearestPoint([fix.lat, fix.lon]) : null),
+    [fix?.lat, fix?.lon],
+  );
+
+  const locationState = !showLocationSetting()
+    ? "off"
+    : nearest == null
+      ? "waiting"
+      : nearest.distanceKm > OFF_CAMPUS_KM
+        ? "offCampus"
+        : "ready";
+  const canRouteFromLocation = locationState === "ready";
+
+  const showCurrentLocation =
+    searchTerm.length === 0 && hasGeolocation && permissionStatus !== false;
+
+  // The fix is read straight from storage at render time, so nothing re-renders
+  // this row when the first one lands. Poll while waiting on it; the effect tears
+  // itself down as soon as a fix arrives.
+  const [, setLocationTick] = useState(0);
+  useEffect(() => {
+    if (locationState !== "waiting" || !showCurrentLocation) return;
+    const id = setInterval(() => setLocationTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [locationState, showCurrentLocation]);
+
   function calcNearestPoint(): Item {
-    var closestPoint: any = { id: -1, lat: -1, lon: -1 };
-    var currentLocationData = localStorage.getItem("currentLocation");
-
-    if (currentLocationData == null || !hasGeolocation)
-      return {
-        key: "-1",
-        name: "Current Location",
-        abbreviation: "N/A",
-        Entrances: [closestPoint],
-        selectedEntrance: 0,
-      };
-
-    var currentLocation = JSON.parse(currentLocationData);
-    closestPoint = nearestPoint([currentLocation[0], currentLocation[1]]);
+    const closestPoint = nearest!.point;
 
     const calculatedItem: Item = {
       key: "-1",
@@ -214,7 +277,7 @@ const Search: React.FC<ChildProps> = ({
       Entrances: [closestPoint],
       selectedEntrance: 0,
     };
-    setSelectedItem(closestPoint.id);
+    setSelectedItem(String(closestPoint.id));
     return calculatedItem;
   }
 
@@ -239,9 +302,6 @@ const Search: React.FC<ChildProps> = ({
       });
   }, [term]);
 
-  const showCurrentLocation =
-    searchTerm.length === 0 && hasGeolocation && permissionStatus !== false;
-
   return (
     <FlatList
       ref={listRef}
@@ -259,28 +319,68 @@ const Search: React.FC<ChildProps> = ({
         showCurrentLocation ? (
           <View>
             <View style={styles.row}>
-              <View style={[styles.leadingIcon, { backgroundColor: "rgba(25,117,200,0.15)" }]}>
-                <Ionicons name="navigate" size={18} color="#1975c8" />
+              <View
+                style={[
+                  styles.leadingIcon,
+                  {
+                    backgroundColor: canRouteFromLocation
+                      ? "rgba(25,117,200,0.15)"
+                      : theme.fillBg,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={canRouteFromLocation ? "navigate" : "navigate-outline"}
+                  size={18}
+                  color={canRouteFromLocation ? "#1975c8" : theme.tertiaryText}
+                />
               </View>
               <View style={styles.rowMain}>
-                <Text style={[styles.itemName, { color: theme.text }]}>
+                <Text
+                  style={[
+                    styles.itemName,
+                    {
+                      color: canRouteFromLocation
+                        ? theme.text
+                        : theme.secondaryText,
+                    },
+                  ]}
+                >
                   Current Location
                 </Text>
                 <Text style={[styles.subtitle, { color: theme.secondaryText }]}>
-                  Route from where you are
+                  {LOCATION_SUBTITLE[locationState]}
                 </Text>
               </View>
+              {/* Without a current on-campus fix there is no sensible node to snap
+                  to, so adding is blocked rather than routing from an arbitrary
+                  corner of campus (or from an entrance that doesn't exist). */}
               <TouchableOpacity
-                style={[styles.addButton, { backgroundColor: theme.primary }]}
+                style={[
+                  styles.addButton,
+                  {
+                    backgroundColor: canRouteFromLocation
+                      ? theme.primary
+                      : theme.fillBg,
+                  },
+                ]}
                 onPress={() => addItem(calcNearestPoint(), 1)}
+                disabled={!canRouteFromLocation}
                 accessibilityRole="button"
                 accessibilityLabel="Add current location to route"
+                accessibilityState={{ disabled: !canRouteFromLocation }}
                 activeOpacity={0.8}
               >
                 <Ionicons
                   name="add"
                   size={22}
-                  color={theme.dark ? palette.textLight : palette.textDark}
+                  color={
+                    !canRouteFromLocation
+                      ? theme.tertiaryText
+                      : theme.dark
+                        ? palette.textLight
+                        : palette.textDark
+                  }
                 />
               </TouchableOpacity>
             </View>

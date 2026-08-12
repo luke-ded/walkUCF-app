@@ -242,9 +242,12 @@ const CurrentLocationMarker: React.FC<{
 
     watchPosition((pos) => {
       setCoord({ latitude: pos.lat, longitude: pos.lon });
+      // Stamped so readers can tell a live fix from one left in storage by an
+      // earlier session (see Search's "Current Location" row). Pre-stamp entries
+      // written by older builds have no third element and so read as stale.
       localStorage.setItem(
         "currentLocation",
-        JSON.stringify([pos.lat, pos.lon]),
+        JSON.stringify([pos.lat, pos.lon, Date.now()]),
       );
     }).then((unsubscribe) => {
       if (cancelled) unsubscribe();

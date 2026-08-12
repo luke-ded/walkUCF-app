@@ -2,6 +2,9 @@
 <Workspace
    version = "1.0">
    <FileRef
+      location = "group:../simlocation_offcampus.gpx">
+   </FileRef>
+   <FileRef
       location = "group:walkUCF/simlocation.gpx">
    </FileRef>
    <FileRef
