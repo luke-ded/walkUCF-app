@@ -31,7 +31,7 @@ interface ChildProps {
 
 const OPTION_DEFS: { key: RouteOptionKey; label: string }[] = [
   { key: "buildings", label: "Buildings" },
-  { key: "jaywalking", label: "Jaywalking" },
+  { key: "jaywalking", label: "Mid-block Crossing" },
   { key: "parking", label: "Parking" },
   { key: "grass", label: "Grass" },
 ];
