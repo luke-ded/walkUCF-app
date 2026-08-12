@@ -3,6 +3,7 @@ import {
   AppState,
   Keyboard,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -99,6 +100,9 @@ function HomePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [focused, setFocused] = useState(false);
   const searchActive = focused || searchTerm.length > 0;
+  // Focused by tapping the field's wrapper rather than the input itself — see the
+  // `pointerEvents` note on the TextInput below.
+  const searchInputRef = useRef<TextInput>(null);
 
   // Route-affecting options, lifted out of MapBox so they can be toggled from
   // the bottom sheet while still feeding the map's pathfinding graph.
@@ -265,9 +269,25 @@ function HomePage() {
   const sheetHeader = (
     <View style={styles.headerWrap}>
       <View style={styles.searchRow}>
-        <View style={[styles.searchField, { backgroundColor: theme.searchFieldBg }]}>
+        {/* A tap here focuses the input, because the input itself is out of the
+            hit-test while it isn't being edited (see below). */}
+        <Pressable
+          style={[styles.searchField, { backgroundColor: theme.searchFieldBg }]}
+          onPress={() => searchInputRef.current?.focus()}
+          // Not an element of its own: the field and the clear button stay separately
+          // reachable, and VoiceOver activates the input directly rather than by touch.
+          accessible={false}
+        >
           <Ionicons name="search" size={18} color={theme.searchPlaceholder} />
           <TextInput
+            ref={searchInputRef}
+            // A native text view handles its own touches: on iOS its text-interaction
+            // gesture recognizers swallow a drag before the sheet's capture handler is
+            // consulted, so a drag starting on the search bar left the sheet still. Off
+            // the hit-test, the drag lands on plain RN views and the sheet claims it as
+            // it does everywhere else. Editing needs real touches (caret, selection), so
+            // the input takes them back for as long as the search is active.
+            pointerEvents={searchActive ? "auto" : "none"}
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search campus"
             placeholderTextColor={theme.searchPlaceholder}
@@ -290,7 +310,7 @@ function HomePage() {
               />
             </TouchableOpacity>
           )}
-        </View>
+        </Pressable>
         {searchActive && (
           <TouchableOpacity
             style={styles.cancelButton}
