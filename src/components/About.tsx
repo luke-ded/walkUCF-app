@@ -56,7 +56,7 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
           </View>
           <View style={styles.cardBody}>
             <Text style={[styles.paragraph, { color: theme.text }]}>
-              <Text style={styles.bold}>walkUCF</Text> is a UCF map perfect for
+              <Text style={styles.bold}>walkUCF</Text> is a map of UCF perfect for
               finding the fastest way to class. It provides the best routes,
               comprehensive building abbreviations, and precise entrances.
             </Text>
@@ -79,9 +79,6 @@ const About: React.FC<ChildProps> = ({ toggleAbout }) => {
               <Link url="https://walkucf.com/privacy">here</Link>.
             </Text>
             <Text style={[styles.paragraph, { color: theme.text }]}>
-              Thanks for using <Text style={styles.bold}>walkUCF</Text>!
-            </Text>
-            <Text style={[styles.disclaimer, { color: theme.secondaryText }]}>
               walkUCF is an independent student project. It is not affiliated
               with, endorsed by, or sponsored by the University of Central
               Florida.
