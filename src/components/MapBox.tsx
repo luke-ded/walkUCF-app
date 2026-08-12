@@ -69,9 +69,7 @@ const SATELLITE_PLAIN_MAP = "Satellite Plain";
 const LEGACY_SATELLITE_MAP = "ERSI Satellite";
 
 const isNativeTile = (key: string) =>
-  key === NATIVE_MAP ||
-  key === SATELLITE_MAP ||
-  key === SATELLITE_PLAIN_MAP;
+  key === NATIVE_MAP || key === SATELLITE_MAP || key === SATELLITE_PLAIN_MAP;
 
 // Every offered layer is currently drawn natively, so none carries a tile URL. The
 // UrlTile plumbing below is kept for a future raster layer; see NATIVE_PLACEHOLDER_URL.
@@ -131,6 +129,12 @@ const CENTER: Region = {
   latitudeDelta: 0.018,
   longitudeDelta: 0.018,
 };
+
+// Viewport span (degrees) the map zooms to when a location is selected, and where that
+// location should land vertically: 0.25 = the middle of the screen's top half, which keeps
+// the pin visible above the bottom sheet (usually sitting at its half-open snap point).
+const SELECT_SPAN_DEG = 0.006;
+const SELECT_FOCUS_Y = 0.25;
 
 // iOS zoom bounds as MapKit camera-to-center distances (meters); replaces the
 // legacy minZoomLevel/maxZoomLevel props that froze the map at the limits.
@@ -350,11 +354,13 @@ const MapBox: React.FC<ChildProps> = ({
   // `Dimensions`, which can still report the previous orientation's size when the
   // post-rotation layout lands (and never matches the app frame in Split View).
   const mapHeight = useRef(0);
+  const mapWidth = useRef(0);
   const [mapHeightState, setMapHeightState] = useState(0);
 
   function onMeasureMap(e: LayoutChangeEvent) {
-    const { height } = e.nativeEvent.layout;
+    const { height, width } = e.nativeEvent.layout;
     mapHeight.current = height;
+    mapWidth.current = width;
     setMapHeightState(height);
   }
 
@@ -370,7 +376,8 @@ const MapBox: React.FC<ChildProps> = ({
   const [paths, setPaths] = useState<number[][]>([]);
   const [loading, setLoading] = useState(false);
   const [tileModal, setTileModal] = useState(false);
-  const [tileSelection, setTileSelection] = useState<string>(resolveInitialTile);
+  const [tileSelection, setTileSelection] =
+    useState<string>(resolveInitialTile);
 
   // Native camera boundary (iOS) tracking the current zoom; seeded from the initial region.
   const [boundary, setBoundary] = useState(() =>
@@ -505,18 +512,47 @@ const MapBox: React.FC<ChildProps> = ({
     }
   }
 
+  // Region that puts `point` at SELECT_FOCUS_Y down the map view rather than dead center,
+  // so the bottom sheet doesn't cover it. Both platforms center the requested region in the
+  // full view (iOS `mapPadding` is only MapKit's layout margins, and Android gets no
+  // padding), so the shift is applied to the region's center: moving the center south by
+  // a fraction of the viewport's latitude span lifts the point by that fraction.
+  //
+  // Both maps aspect-fit the requested region, expanding whichever axis is too narrow, so
+  // the span that actually renders is pre-computed here — offsetting by a span the map then
+  // grew would land the point short of the target. Mercator stretches latitude by 1/cos(lat),
+  // hence the cosine term when converting the view's pixel aspect into degrees.
+  function focusRegion(point: LatLng): Region {
+    const h = mapHeight.current;
+    const w = mapWidth.current;
+    if (h <= 0 || w <= 0) {
+      return {
+        latitude: point.latitude,
+        longitude: point.longitude,
+        latitudeDelta: SELECT_SPAN_DEG,
+        longitudeDelta: SELECT_SPAN_DEG,
+      };
+    }
+
+    const degAspect = (h / w) * Math.cos((point.latitude * Math.PI) / 180);
+    const latitudeDelta = Math.max(
+      SELECT_SPAN_DEG,
+      SELECT_SPAN_DEG * degAspect,
+    );
+    const longitudeDelta = latitudeDelta / degAspect;
+
+    return {
+      latitude: point.latitude - (0.5 - SELECT_FOCUS_Y) * latitudeDelta,
+      longitude: point.longitude,
+      latitudeDelta,
+      longitudeDelta,
+    };
+  }
+
   // Pan to the selected entrance when it changes.
   useEffect(() => {
     if (selectedPoint && mapRef.current) {
-      mapRef.current.animateToRegion(
-        {
-          latitude: selectedPoint.latitude,
-          longitude: selectedPoint.longitude,
-          latitudeDelta: 0.006,
-          longitudeDelta: 0.006,
-        },
-        500,
-      );
+      mapRef.current.animateToRegion(focusRegion(selectedPoint), 500);
     }
   }, [selectedPoint]);
 
@@ -535,7 +571,9 @@ const MapBox: React.FC<ChildProps> = ({
       const latDelta = b.northEast.latitude - b.southWest.latitude;
       const lngDelta = b.northEast.longitude - b.southWest.longitude;
       lastDeltas.current = { lat: latDelta, lng: lngDelta };
-      setBoundary(computeBoundary(latDelta, lngDelta, southMarginDeg(latDelta)));
+      setBoundary(
+        computeBoundary(latDelta, lngDelta, southMarginDeg(latDelta)),
+      );
     } catch {
       // getMapBoundaries can reject before the surface is laid out; the first
       // gesture's onRegionChangeComplete will still seed the boundary correctly.
@@ -670,7 +708,10 @@ const MapBox: React.FC<ChildProps> = ({
         // Zoom bounds: iOS uses native cameraZoomRange + cameraBoundary (via local patch),
         // since the legacy min/maxZoomLevel props freeze the map at limits; Android keeps them.
         {...(Platform.OS === "ios"
-          ? ({ cameraZoomRange: ZOOM_RANGE, cameraBoundary: boundary } as object)
+          ? ({
+              cameraZoomRange: ZOOM_RANGE,
+              cameraBoundary: boundary,
+            } as object)
           : { minZoomLevel: 15, maxZoomLevel: 18 })}
         {...(Platform.OS === "ios" ? { mapPadding } : null)}
         rotateEnabled={false}
@@ -748,7 +789,10 @@ const MapBox: React.FC<ChildProps> = ({
         <TouchableOpacity
           style={[
             styles.controlButton,
-            { backgroundColor: theme.controlBg, borderColor: theme.controlBorder },
+            {
+              backgroundColor: theme.controlBg,
+              borderColor: theme.controlBorder,
+            },
           ]}
           onPress={() => setTileModal(true)}
           accessibilityRole="button"
@@ -765,7 +809,10 @@ const MapBox: React.FC<ChildProps> = ({
         <TouchableOpacity
           style={[
             styles.controlButton,
-            { backgroundColor: theme.controlBg, borderColor: theme.controlBorder },
+            {
+              backgroundColor: theme.controlBg,
+              borderColor: theme.controlBorder,
+            },
             !selectedPoint && styles.controlDisabled,
           ]}
           onPress={handleDeselect}
@@ -827,7 +874,10 @@ const MapBox: React.FC<ChildProps> = ({
           <Pressable
             style={[
               styles.tileCard,
-              { backgroundColor: theme.cardBg, borderColor: theme.controlBorder },
+              {
+                backgroundColor: theme.cardBg,
+                borderColor: theme.controlBorder,
+              },
             ]}
           >
             <Text style={[styles.tileTitle, { color: theme.secondaryText }]}>
@@ -855,7 +905,11 @@ const MapBox: React.FC<ChildProps> = ({
                     {tileLabels[key] ?? key}
                   </Text>
                   {active && (
-                    <Ionicons name="checkmark" size={20} color={theme.primary} />
+                    <Ionicons
+                      name="checkmark"
+                      size={20}
+                      color={theme.primary}
+                    />
                   )}
                 </TouchableOpacity>
               );
