@@ -95,6 +95,10 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
   const translateY = useRef(new Animated.Value(0)).current;
   const indexRef = useRef(0);
   const startY = useRef(0);
+  // Mirror of `translateY`, kept so a starting drag can read the sheet's position
+  // synchronously — see `onPanResponderGrant`. A listener is the only way to follow a
+  // native-driven value; `setValue` calls it too, so it stays current during a drag.
+  const currentY = useRef(0);
   const didInit = useRef(false);
   // Body-list scroll offset and inner-gesture lock, both read from the pan responder
   // while deciding whether a drag belongs to the sheet or to the content.
@@ -152,6 +156,13 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
   );
 
   useEffect(() => {
+    const id = translateY.addListener(({ value }) => {
+      currentY.current = value;
+    });
+    return () => translateY.removeListener(id);
+  }, [translateY]);
+
+  useEffect(() => {
     if (!ready) return;
     if (!didInit.current) {
       // First time we know the geometry: slide up from off-screen.
@@ -205,9 +216,12 @@ const BottomSheet = forwardRef<BottomSheetRef, Props>(function BottomSheet(
         // The body list is native-scrolled, so claiming the JS responder doesn't stop
         // it rubber-banding under the finger — freeze it for the rest of the gesture.
         setScrollEnabled(false);
-        translateY.stopAnimation((v: number) => {
-          startY.current = v;
-        });
+        // Anchor the drag on the tracked value, not on `stopAnimation`'s callback: for a
+        // native-driven value that callback round-trips to native and lands a frame or
+        // more later, so the first moves anchored on the previous gesture's start and
+        // flashed the sheet to the detent it was dragged from last.
+        translateY.stopAnimation();
+        startY.current = currentY.current;
       },
       onPanResponderMove: (_e, g) => {
         const next = Math.max(0, Math.min(startY.current + g.dy, snaps[0]));
