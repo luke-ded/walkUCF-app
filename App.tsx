@@ -1,22 +1,35 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, useColorScheme } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import HomePage from "./src/HomePage";
-import { hydrateStorage } from "./src/storage";
+import { hydrateStorage, localStorage } from "./src/storage";
 import { ThemeContext, buildTheme } from "./src/theme";
+
+const THEME_KEY = "walkucf:theme";
 
 export default function App() {
   const [ready, setReady] = useState(false);
-  // The web app defaults to a dark, gold-on-black design.
-  const [dark, setDark] = useState(true);
+  // Until the user picks a mode, follow the device's appearance setting; the web
+  // app's dark, gold-on-black design is the fallback when the OS reports nothing.
+  const systemScheme = useColorScheme();
+  const [override, setOverride] = useState<boolean | null>(null);
+  const dark = override ?? systemScheme !== "light";
 
   useEffect(() => {
-    hydrateStorage().finally(() => setReady(true));
+    hydrateStorage().finally(() => {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") setOverride(saved === "dark");
+      setReady(true);
+    });
   }, []);
 
   const themeValue = {
     dark,
-    toggleDark: () => setDark((d) => !d),
+    toggleDark: () => {
+      const next = !dark;
+      setOverride(next);
+      localStorage.setItem(THEME_KEY, next ? "dark" : "light");
+    },
     theme: buildTheme(dark),
   };
 
