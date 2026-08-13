@@ -99,6 +99,9 @@ after a build that lasted under a second. Xcode remembers recent projects, and
 `expo prebuild` regenerates `ios/` from scratch, so it is easy to end up pointed
 at the wrong container. `npm run ios` always picks the workspace.
 
+In the "Info" section of the "Run" section of the simulation schema, make sure the
+build is set to "Release"
+
 ### Native projects are generated (CNG)
 
 `ios/` and `android/` are **not** checked in. They are generated from `app.json`
