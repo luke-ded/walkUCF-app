@@ -22,7 +22,7 @@ export function permitColor(permit: string): string {
       return "#00a651";
     case "Employee - E":
       return "#ed1d24";
-    case "Resident - R":
+    case "Resident - R or AV":
       return "#f47721";
     case "Knights Plaza - KP":
       return "#bd1b8d";
